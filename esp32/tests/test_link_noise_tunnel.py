@@ -119,6 +119,9 @@ class LinkNoiseTunnelTest(unittest.TestCase):
     def test_backpressure_ownership_fairness_and_failure(self):
         self.run_harness("tunnel")
 
+    def test_in_place_batches_keep_their_room_and_order(self) -> None:
+        self.run_harness("inplace")
+
     def test_control_prefix_stream_and_no_whole_payload_copy(self):
         self.run_harness("stream")
 

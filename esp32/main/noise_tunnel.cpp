@@ -110,9 +110,13 @@ extern "C" bool noise_tx_has_contiguous_dma_headroom(void) {
 #endif
 
 struct tx_slot {
-    uint8_t *buf;   // TUN_MAX_MSG_BYTES, PSRAM-preferred
+    uint8_t *base;  // headroom + TUN_MAX_MSG_BYTES + tailroom, PSRAM-preferred
+    uint8_t *buf;   // the batch: base + NOISE_TUNNEL_TX_HEADROOM
     size_t len;
 };
+
+#define TX_SLOT_ALLOC \
+    (NOISE_TUNNEL_TX_HEADROOM + TUN_MAX_MSG_BYTES + NOISE_TUNNEL_TX_TAILROOM)
 
 static noise_tunnel_packet_cb s_packet_cb = nullptr;
 static std::atomic_bool s_connected{false};
@@ -141,11 +145,13 @@ static void ensure_pool() {
         return;
     }
     for (int i = 0; i < TX_POOL_SIZE; i++) {
-        s_slots[i].buf = static_cast<uint8_t *>(
-            heap_caps_malloc(TUN_MAX_MSG_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-        if (!s_slots[i].buf) {
-            s_slots[i].buf = static_cast<uint8_t *>(malloc(TUN_MAX_MSG_BYTES));
+        s_slots[i].base = static_cast<uint8_t *>(
+            heap_caps_malloc(TX_SLOT_ALLOC, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!s_slots[i].base) {
+            s_slots[i].base = static_cast<uint8_t *>(malloc(TX_SLOT_ALLOC));
         }
+        s_slots[i].buf = s_slots[i].base
+            ? s_slots[i].base + NOISE_TUNNEL_TX_HEADROOM : nullptr;
         s_slots[i].len = 0;
         // Only enqueue slots that actually allocated a buffer — otherwise
         // send_packet would later memcpy into a NULL buf. A short pool just
@@ -308,7 +314,10 @@ extern "C" int noise_tunnel_pump_tx(const noise_tunnel_emit_t *emit) {
             break;
         }
         if (xQueueReceive(s_work_q, &slot, 0) != pdTRUE) break;
-        bool ok = emit->send_body(emit->ctx, slot->buf, slot->len);
+        bool ok = emit->send_body_inplace
+            ? emit->send_body_inplace(emit->ctx, slot->base, NOISE_TUNNEL_TX_HEADROOM,
+                                      slot->len, NOISE_TUNNEL_TX_TAILROOM)
+            : emit->send_body(emit->ctx, slot->buf, slot->len);
         xQueueSend(s_free_q, &slot, 0);
         if (!ok) {
             ESP_LOGW(TAG, "tunnel send_body failed (dma_free=%u dma_largest=%u)",

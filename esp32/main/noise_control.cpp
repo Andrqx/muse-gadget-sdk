@@ -985,6 +985,27 @@ static bool tunnel_send_body(void *vctx, const uint8_t *data, size_t len) {
     return flush_outbound(c->tls, *c->session, c->ws_buf);
 }
 
+// The same, encoding and encrypting the batch where it sits in its tunnel
+// slot (noise_tunnel.cpp): no copy into the service, envelope and WebSocket
+// buffers. Falls back to the copying path if the session can't (another
+// outbound message mid-flight).
+static bool tunnel_send_body_inplace(void *vctx, uint8_t *buf, size_t headroom,
+                                     size_t len, size_t tailroom) {
+    auto *c = static_cast<tunnel_emit_ctx *>(vctx);
+    auto r = c->session->SealBodyChunkInPlace(
+        ServiceType::Daemon, TUNNEL_STREAM_ID,
+        ByteSpan(buf, headroom + len + tailroom), headroom, len);
+    if (r.status.IsFailedPrecondition() && c->session->isEstablished()) {
+        return tunnel_send_body(vctx, buf + headroom, len);
+    }
+    if (!r.status.ok() || r.offset < 14) {
+        ESP_LOGE(TAG, "tunnel SealBodyChunkInPlace failed: %s (offset %u)",
+                 r.status.str(), (unsigned)r.offset);
+        return false;
+    }
+    return ws_send_frame_inplace(c->tls, buf + r.offset, r.size);
+}
+
 // ---- Extra daemon requests (noise_ctrl_req_*) --------------------------------
 
 // Only Muse opens these; Link-only gateways get the empty stubs below.
@@ -2101,7 +2122,8 @@ static session_result_t run_session(stack_monitor_t *stack) {
     // this connection has a registered device. Opening before the ack races the
     // registration and takes a 403 + slow reopen.
     tunnel_emit_ctx tun_ctx = {tls, &session, svc_scratch, env_scratch, ws_buf};
-    noise_tunnel_emit_t tun_emit = {&tun_ctx, tunnel_open_stream, tunnel_send_body};
+    noise_tunnel_emit_t tun_emit = {&tun_ctx, tunnel_open_stream, tunnel_send_body,
+                                    tunnel_send_body_inplace};
     bool tunnel_opened = false;
     uint64_t last_busy_us = esp_timer_get_time();
 
