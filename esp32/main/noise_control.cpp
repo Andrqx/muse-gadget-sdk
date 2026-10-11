@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include "ble_commands.h"
 #include "noise_control.h"
 #include "stack_monitor.h"
 #include "noise_upgrade.h"
@@ -1489,6 +1490,10 @@ static char *build_register_json(void) {
                     "(esp_https_ota), then reboot.",
                     ota_required, ota_optional);
     }
+
+#if CONFIG_HOMEHUB_BLE_COMMANDS
+    ble_commands_register(commands);
+#endif
 
     cJSON_AddItemToObject(params, "commands_v2", commands);
     cJSON_AddItemToObject(root, "params", params);

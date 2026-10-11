@@ -278,7 +278,12 @@ int main(void) {
 
     def test_ble_shutdown_stops_nimble_and_blocks_advertising_restart(self) -> None:
         source = BLE_SERVER_C.read_text()
-        shutdown = _function_body(source, "void ble_server_full_shutdown(")
+        full_shutdown = _function_body(source, "void ble_server_full_shutdown(")
+        self.assertIn("shutdown_stack(true)", full_shutdown)
+        # ble_server_power_off() stops the same way but keeps the controller's
+        # memory so BLE can come back.
+        self.assertIn("shutdown_stack(false)", _function_body(source, "bool ble_server_power_off("))
+        shutdown = _function_body(source, "static void shutdown_stack(bool release_memory) {")
         start_adv = _function_body(source, "static void start_advertising(void) {")
         gap = _function_body(source, "static int gap_event_cb(")
         begin_adv = _function_body(source, "void ble_server_begin_advertising(")

@@ -18,6 +18,8 @@ set(GADGET_SRCS
     "ble_server.c"
     "ble_basic.c"
     "ble_central.c"
+    "ble_client.c"
+    "ble_commands.c"
     "ble_coex.c"
     "pipeline_bench.cpp"
     "ghash32.c"

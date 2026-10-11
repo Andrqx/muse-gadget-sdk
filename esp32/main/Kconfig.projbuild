@@ -176,6 +176,20 @@ menu "ESP32 Device SDK"
             traffic (a phone reading the status characteristic) is unaffected;
             turn this off for a sustained BLE stream that needs its slots.
 
+    config HOMEHUB_BLE_COMMANDS
+        bool "Muse commands for the Link's Bluetooth LE"
+        depends on HOMEHUB_BLE_PERSISTENT && BT_NIMBLE_ROLE_CENTRAL && BT_NIMBLE_ROLE_OBSERVER && BT_NIMBLE_GATT_CLIENT
+        default y
+        help
+            Lets Muse turn BLE on and off, control the Link's own advertising,
+            scan for nearby devices, connect to them (up to three at once),
+            list their GATT services and characteristics, and read, write and
+            subscribe to characteristics: ble.state, ble.power, ble.advertise,
+            ble.scan, ble.connect, ble.disconnect, ble.discover, ble.read,
+            ble.write and ble.subscribe (main/ble_commands.c). Needs the
+            central, observer and GATT client roles
+            (tools/coexist/sdkconfig.nimble-tuned keeps them).
+
     config HOMEHUB_BLE_THROUGHPUT_TEST
         bool "BLE throughput test characteristic"
         depends on HOMEHUB_BLE_PERSISTENT

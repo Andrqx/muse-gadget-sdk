@@ -447,6 +447,14 @@ The device still needs to be paired once for its token.
   only until the bits are rechecked on another version.
   `tools/coexist/` holds the overlays used to size it, and the data-path
   bench (`CONFIG_HOMEHUB_PIPELINE_BENCH`) with its results.
+- With BLE persistent, `CONFIG_HOMEHUB_BLE_COMMANDS` (default on) lets Muse
+  drive the Link's BLE: `ble.state`, `ble.power`, `ble.advertise`,
+  `ble.scan`, `ble.connect`, `ble.disconnect`, `ble.discover`, `ble.read`,
+  `ble.write` and `ble.subscribe` (`main/ble_commands.c` over the central in
+  `main/ble_client.c`). They run one at a time on their own task. `ble.power`
+  off stops the stack without releasing the controller's memory, so it can
+  come back; the default build, which releases BLE after setup, can't.
+  `tests/test_ble_commands.py` runs them against a fake client.
 - On the C5 with PSRAM, `CONFIG_HOMEHUB_FAST_GCM` (default on there) wraps
   ESP-IDF's one-shot AES-GCM with `main/fast_gcm.c` for TLS and Noise. It
   takes about 19 KB of internal RAM (8-bit GHASH tables and the PSRAM staging

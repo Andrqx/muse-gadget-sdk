@@ -81,6 +81,9 @@ static bool s_started = false;
 static bool s_shutting_down = false;
 static bool s_synced = false;
 static bool s_advertising_enabled = false;
+#if CONFIG_HOMEHUB_BLE_PERSISTENT
+static int s_companion_interval_ms = CONFIG_HOMEHUB_BLE_PERSISTENT_ADV_INTERVAL_MS;
+#endif
 static bool s_advertising_active = false;
 static bool s_plaintext_status_blocked = false;
 static ble_companion_t s_companion = {0};
@@ -752,7 +755,19 @@ bool ble_server_send_encrypted_json(const char *json, uint32_t generation) {
     return sent;
 }
 
+static void shutdown_stack(bool release_memory);
+
 void ble_server_full_shutdown(void) {
+    shutdown_stack(true);
+}
+
+bool ble_server_power_off(void) {
+    if (!s_started || s_shutting_down) return true;
+    shutdown_stack(false);
+    return !s_started;
+}
+
+static void shutdown_stack(bool release_memory) {
     if (!s_started || s_shutting_down) return;
     s_shutting_down = true;
     s_advertising_enabled = false;
@@ -791,6 +806,14 @@ void ble_server_full_shutdown(void) {
     s_synced = false;
     s_advertising_active = false;
 
+    s_shutting_down = false;
+    if (!release_memory) {
+        // The controller's static memory stays, so ble_server_start() can
+        // bring the stack back.
+        ESP_LOGI(TAG, "BLE stopped");
+        return;
+    }
+    s_shutting_down = true;   // released for good: no restart
     err = esp_bt_mem_release(ESP_BT_MODE_BLE);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "esp_bt_mem_release: %s", esp_err_to_name(err));
@@ -870,7 +893,7 @@ static void start_advertising(void) {
     // slowly: each advertising event takes the shared radio from Wi-Fi. Setup
     // keeps NimBLE's fast 30-60 ms default.
     if (config_setup_complete() || !s_advertising_enabled) {
-        advp.itvl_min = BLE_GAP_ADV_ITVL_MS(CONFIG_HOMEHUB_BLE_PERSISTENT_ADV_INTERVAL_MS);
+        advp.itvl_min = BLE_GAP_ADV_ITVL_MS(s_companion_interval_ms);
         advp.itvl_max = advp.itvl_min + BLE_GAP_ADV_ITVL_MS(20);
     }
 #endif
@@ -1082,6 +1105,36 @@ void ble_server_set_companion_advertising(bool enabled) {
         }
         s_advertising_active = false;
     }
+}
+
+#if CONFIG_HOMEHUB_BLE_PERSISTENT
+void ble_server_set_companion_interval_ms(int interval_ms) {
+    if (interval_ms < 20 || interval_ms > 10240 || interval_ms == s_companion_interval_ms) return;
+    s_companion_interval_ms = interval_ms;
+    if (!s_started || s_shutting_down || !s_advertising_active || s_advertising_enabled) return;
+    // Restart advertising at the new interval.
+    if (ble_gap_adv_stop() == 0) {
+        s_advertising_active = false;
+        if (s_synced && s_companion_advertising) start_advertising();
+    }
+}
+
+int ble_server_companion_interval_ms(void) {
+    return s_companion_interval_ms;
+}
+#endif
+
+bool ble_server_is_advertising(void) {
+    return s_started && !s_shutting_down && s_advertising_active;
+}
+
+bool ble_server_own_address(uint8_t addr[6]) {
+    if (!s_started || s_shutting_down || !s_synced) return false;
+    return ble_hs_id_copy_addr(BLE_ADDR_PUBLIC, addr, NULL) == 0;
+}
+
+bool ble_server_is_synced(void) {
+    return s_started && !s_shutting_down && s_synced;
 }
 
 bool ble_server_is_started(void) {

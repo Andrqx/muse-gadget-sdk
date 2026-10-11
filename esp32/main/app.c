@@ -48,6 +48,9 @@
 #include "wifi_known.h"
 #include "customer_product_info.h"
 #include "ble_coex.h"
+#if CONFIG_HOMEHUB_BLE_COMMANDS
+#include "ble_commands.h"
+#endif
 #include "ble_server.h"
 #include "factory_test.h"
 #include "vm_api.h"
@@ -1857,9 +1860,19 @@ static cJSON *bug_report_command(
 }
 #endif
 
+#if CONFIG_HOMEHUB_BLE_COMMANDS
+// ---- BLE commands' hooks (main/ble_commands.c) ----
+
+#endif  // CONFIG_HOMEHUB_BLE_COMMANDS
+
 static cJSON *on_ws_command(
     const char *command, cJSON *params, const char *request_id,
     noise_ctrl_session_generation_t session_generation) {
+#if CONFIG_HOMEHUB_BLE_COMMANDS
+    if (ble_commands_handles(command)) {
+        return ble_commands_handle(command, params, request_id, session_generation);
+    }
+#endif
     if (strcmp(command, "device.list_vms") == 0) {
         return list_vms_command();
     }
@@ -2119,6 +2132,59 @@ static void start_ble_setup_server_if_needed(void) {
     s_ble_started = true;
     heap_snapshot("after ble_start");
 }
+
+
+#if CONFIG_HOMEHUB_BLE_COMMANDS
+// Muse drives the Link's BLE through ble.* commands (main/ble_commands.c).
+static bool ble_cmd_power(bool on) {
+    if (!on) {
+        if (!s_ble_started) return true;
+        if (!ble_server_power_off()) return false;
+        s_ble_started = false;
+        ui_set_ble("off");
+        return true;
+    }
+    if (!s_ble_started) start_ble_setup_server_if_needed();
+    if (!ble_server_is_started()) return false;
+    if (config_setup_complete()) {
+        ble_server_set_companion_advertising(true);
+        ui_set_ble("companion");
+    }
+    for (int i = 0; i < 30 && !ble_server_is_synced(); i++) vTaskDelay(pdMS_TO_TICKS(100));
+    return ble_server_is_synced();
+}
+
+static bool ble_cmd_is_on(void) {
+    return s_ble_started && ble_server_is_started();
+}
+
+static void ble_cmd_advertise(bool on, int interval_ms) {
+    if (interval_ms) ble_server_set_companion_interval_ms(interval_ms);
+    ble_server_set_companion_advertising(on);
+    if (config_setup_complete()) ui_set_ble(on ? "companion" : "on");
+}
+
+static void ble_cmd_set_wifi_first(bool on) {
+    ble_coex_set_withheld(on ? (BLE_COEX_ADV | BLE_COEX_CONN) : 0);
+}
+
+static bool ble_cmd_wifi_first(void) {
+    return ble_coex_active() && ble_coex_withheld() != 0;
+}
+
+static const ble_commands_ops_t s_ble_cmd_ops = {
+    .power = ble_cmd_power,
+    .is_on = ble_cmd_is_on,
+    .advertise = ble_cmd_advertise,
+    .is_advertising = ble_server_is_advertising,
+    .adv_interval_ms = ble_server_companion_interval_ms,
+    .own_address = ble_server_own_address,
+    .name = identity_ble_name,
+    .peripheral_connected = ble_server_has_connection,
+    .set_wifi_first = ble_cmd_set_wifi_first,
+    .wifi_first = ble_cmd_wifi_first,
+};
+#endif
 
 static void open_setup_window(const char *reason) {
     if (config_setup_complete()) {
@@ -2551,6 +2617,9 @@ void app_run(void) {
     noise_ctrl_set_command_cb(on_ws_command);
     noise_ctrl_set_agent_name_cb(led_status_set_title);
     heap_snapshot("after noise_ctrl_init");
+#if CONFIG_HOMEHUB_BLE_COMMANDS
+    ble_commands_init(&s_ble_cmd_ops);
+#endif
 #if CONFIG_HOMEHUB_BLE_PERSISTENT
     ble_basic_register();
 #endif
