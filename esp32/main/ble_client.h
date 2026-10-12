@@ -22,8 +22,10 @@
 // NimBLE host that ble_server starts.
 //
 // Every call blocks and must run on one worker task (never the NimBLE host
-// task or a GAP/GATT callback); calls are serialized by the caller. Errors
-// are negative BLE_CLIENT_E* values, or NimBLE's own codes (positive).
+// task or a GAP/GATT callback); calls are serialized by the caller. Every
+// call returns 0 on success, or an error: a negative BLE_CLIENT_E* value or
+// one of NimBLE's own codes (positive, ATT errors from 0x100). Counts come
+// back through out-parameters, never in the return value.
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -69,10 +71,10 @@ typedef struct {
 
 // Scan for duration_ms (100..30000). With a non-empty name filter, only
 // devices whose name contains it (case-insensitive) are kept. Fills up to max
-// devices (strongest kept when full) and returns how many, or an error.
+// devices (strongest kept when full); *found gets how many (at most max).
 // *reports gets the number of advertising reports, duplicates included.
 int ble_client_scan(uint32_t duration_ms, bool active, const char *name_filter,
-                    ble_client_dev_t *out, int max, uint32_t *reports);
+                    ble_client_dev_t *out, int max, int *found, uint32_t *reports);
 
 typedef struct {
     uint16_t conn;
@@ -137,10 +139,10 @@ typedef struct {
 // for duration_ms, then unsubscribe unless keep. With keep, values that
 // arrive afterwards are buffered and come first (ms 0) from the next call on
 // the same characteristic, so a write's reply isn't lost between calls.
-// Returns how many were stored (up to max); *dropped counts the rest.
+// *count gets how many were stored (at most max); *dropped counts the rest.
 int ble_client_subscribe(uint16_t conn, const ble_client_chr_t *chr, uint32_t duration_ms,
                          bool keep, ble_client_notification_t *out, int max,
-                         uint32_t *dropped);
+                         int *count, uint32_t *dropped);
 
 // The stack is going away: forget every connection and cached database.
 void ble_client_reset(void);

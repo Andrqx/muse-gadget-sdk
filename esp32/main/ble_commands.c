@@ -442,11 +442,14 @@ static cJSON *cmd_scan(const cJSON *params) {
     ble_client_dev_t *devs = BLE_CMD_ALLOC(sizeof(ble_client_dev_t) * SCAN_MAX_DEVICES);
     if (!devs) return error_result("out_of_memory", "out of memory");
     uint32_t reports = 0;
-    int n = ble_client_scan((uint32_t)ms, active != 0, name, devs, SCAN_MAX_DEVICES, &reports);
-    if (n < 0) {
+    int n = 0;
+    int rc = ble_client_scan((uint32_t)ms, active != 0, name, devs, SCAN_MAX_DEVICES, &n, &reports);
+    if (rc != 0) {
         free(devs);
-        return client_error(n, "scan");
+        return client_error(rc, "scan");
     }
+    if (n < 0) n = 0;
+    if (n > SCAN_MAX_DEVICES) n = SCAN_MAX_DEVICES;
     qsort(devs, (size_t)n, sizeof(*devs), by_rssi);
     s_num_seen = 0;
     for (int i = 0; i < n && s_num_seen < SCAN_MAX_DEVICES; i++) {
@@ -657,11 +660,15 @@ static cJSON *cmd_subscribe(const cJSON *params) {
     ble_client_notification_t *n = BLE_CMD_ALLOC(sizeof(*n) * BLE_CLIENT_MAX_NOTIFY);
     if (!n) return error_result("out_of_memory", "out of memory");
     uint32_t dropped = 0;
-    int count = ble_client_subscribe(conn, &chr, (uint32_t)ms, keep == 1, n, BLE_CLIENT_MAX_NOTIFY, &dropped);
-    if (count < 0) {
+    int count = 0;
+    int rc = ble_client_subscribe(conn, &chr, (uint32_t)ms, keep == 1, n, BLE_CLIENT_MAX_NOTIFY,
+                                  &count, &dropped);
+    if (rc != 0) {
         free(n);
-        return client_error(count, "subscribe");
+        return client_error(rc, "subscribe");
     }
+    if (count < 0) count = 0;
+    if (count > BLE_CLIENT_MAX_NOTIFY) count = BLE_CLIENT_MAX_NOTIFY;
     cJSON *p = cJSON_CreateObject();
     cJSON_AddNumberToObject(p, "conn", conn);
     cJSON_AddNumberToObject(p, "handle", chr.val_handle);

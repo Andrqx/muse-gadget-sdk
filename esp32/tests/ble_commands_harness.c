@@ -50,7 +50,7 @@ static uint32_t g_scan_ms;
 static bool g_scan_active;
 static char g_scan_filter[32];
 int ble_client_scan(uint32_t ms, bool active, const char *f, ble_client_dev_t *out, int max,
-                    uint32_t *reports) {
+                    int *found, uint32_t *reports) {
     if (!g_on) return BLE_CLIENT_ENOTREADY;
     if (g_scan_rc) return g_scan_rc;
     g_scan_ms = ms;
@@ -72,7 +72,8 @@ int ble_client_scan(uint32_t ms, bool active, const char *f, ble_client_dev_t *o
     out[1].has_tx_power = true; out[1].tx_power = 4;
     memcpy(out[2].addr, a0, 6); out[2].addr[0] = 0x09; out[2].rssi = -60;
     *reports = 42;
-    return 3;
+    *found = 3;
+    return 0;
 }
 
 static uint8_t g_conn_addr[6], g_conn_type = 0xee;
@@ -148,15 +149,19 @@ int ble_client_write(uint16_t conn, uint16_t handle, const uint8_t *d, size_t le
     memcpy(g_written, d, len); g_written_len = len; g_written_rsp = rsp; g_written_handle = handle;
     return 0;
 }
+static int g_sub_rc;
 int ble_client_subscribe(uint16_t conn, const ble_client_chr_t *chr, uint32_t ms, bool keep,
-                         ble_client_notification_t *out, int max, uint32_t *dropped) {
+                         ble_client_notification_t *out, int max, int *count, uint32_t *dropped) {
     (void)conn; (void)ms; (void)keep; (void)max;
     assert(chr->val_handle == 3);
+    *count = 0;
+    if (g_sub_rc) return g_sub_rc;   // a NimBLE error is never a count
     out[0].ms = 10; out[0].len = 1; out[0].data[0] = 0x63;
     out[1].ms = 1010; out[1].len = 100;
     for (int i = 0; i < BLE_CLIENT_NOTIFY_BYTES; i++) out[1].data[i] = (uint8_t)i;
     *dropped = 2;
-    return 2;
+    *count = 2;
+    return 0;
 }
 static int g_resets;
 void ble_client_reset(void) { g_resets++; }
@@ -333,6 +338,18 @@ int main(void) {
     r = run("ble.subscribe", "{\"conn\": 1, \"handle\": 12}");
     assert(!ok(r) && !strcmp(err_code(r), "invalid_params"));   // no notify
     cJSON_Delete(r);
+    // A peer that rejects the CCCD write answers with a positive NimBLE
+    // code (ATT 0x103 here, 259): an error, never 259 values.
+    g_sub_rc = 0x103;
+    r = run("ble.subscribe", "{\"conn\": 1, \"uuid\": \"2a19\"}");
+    assert(!ok(r) && !cJSON_GetObjectItem(r, "payload"));
+    cJSON_Delete(r);
+    g_sub_rc = 0;
+    g_scan_rc = 3;   // BLE_HS_EALREADY from ble_gap_disc
+    r = run("ble.scan", NULL);
+    assert(!ok(r) && !cJSON_GetObjectItem(r, "payload"));
+    cJSON_Delete(r);
+    g_scan_rc = 0;
 
     // Disconnect, then power off drops the client's state.
     r = run("ble.disconnect", "{\"conn\": 1}");

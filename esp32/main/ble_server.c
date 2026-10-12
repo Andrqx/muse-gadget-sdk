@@ -777,6 +777,10 @@ static void shutdown_stack(bool release_memory) {
     if (rc != 0) {
         ESP_LOGD(TAG, "adv_stop rc=%d", rc);
     }
+    // gap_event_cb hides events from the companion while shutting down, and
+    // the stack may stop before the disconnect arrives at all. Remember the
+    // link so the companion can be told it's gone (below).
+    uint16_t phone_conn = s_conn_handle;
     if (s_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         rc = ble_gap_terminate(s_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
         if (rc != 0) {
@@ -805,6 +809,16 @@ static void shutdown_stack(bool release_memory) {
     s_started = false;
     s_synced = false;
     s_advertising_active = false;
+    if (phone_conn != BLE_HS_CONN_HANDLE_NONE && s_companion.on_gap_event) {
+        // Otherwise a companion such as ble_basic keeps the dead handle and
+        // goes on notifying into a stopped stack.
+        struct ble_gap_event ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.type = BLE_GAP_EVENT_DISCONNECT;
+        ev.disconnect.reason = BLE_HS_ENOTCONN;
+        ev.disconnect.conn.conn_handle = phone_conn;
+        (void)s_companion.on_gap_event(&ev);
+    }
 
     s_shutting_down = false;
     if (!release_memory) {

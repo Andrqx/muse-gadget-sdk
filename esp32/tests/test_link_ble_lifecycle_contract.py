@@ -289,6 +289,16 @@ int main(void) {
         begin_adv = _function_body(source, "void ble_server_begin_advertising(")
         stop_adv = _function_body(source, "void ble_server_stop_advertising(")
 
+        # Companion events are hidden while shutting down, so the companion
+        # (ble_basic) is told the phone's link is gone once the stack stops;
+        # otherwise it keeps notifying a dead handle after ble.power off.
+        self.assertIn("ev.type = BLE_GAP_EVENT_DISCONNECT", shutdown)
+        self.assertIn("s_companion.on_gap_event(&ev)", shutdown)
+        self.assertLess(shutdown.index("nimble_port_deinit()"),
+                        shutdown.index("s_companion.on_gap_event(&ev)"))
+        basic = (BLE_SERVER_C.parent / "ble_basic.c").read_text()
+        self.assertIn("if (!ble_hs_synced()) return;",
+                      _function_body(basic, "void ble_basic_notify_status("))
         self.assertIn("s_shutting_down = true", shutdown)
         self.assertIn("s_advertising_enabled = false", shutdown)
         self.assertIn("ble_gap_adv_stop()", shutdown)

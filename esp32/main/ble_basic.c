@@ -246,6 +246,7 @@ bool ble_basic_host_synced(void) {
 void ble_basic_notify_status(void) {
     uint16_t conn = atomic_load(&s_conn);
     if (conn == BLE_HS_CONN_HANDLE_NONE || !atomic_load(&s_status_subscribed)) return;
+    if (!ble_hs_synced()) return;   // the stack is off (ble.power) or restarting
     char buf[224];
     int n = build_status(buf, sizeof(buf));
     if (n < 0 || (size_t)n >= sizeof(buf)) return;
