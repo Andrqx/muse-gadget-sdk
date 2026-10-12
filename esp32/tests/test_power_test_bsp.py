@@ -18,23 +18,10 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from power_test_fixture import function_body
 
 ROOT = Path(__file__).resolve().parents[1]
 BSP = ROOT / "components/muse/boards/board_sensecap_watcher.c"
-
-
-def function_body(source, signature):
-    start = source.index(signature)
-    first = source.index("{", start)
-    while ";" in source[start:first]:
-        start = source.index(signature, start + len(signature))
-        first = source.index("{", start)
-    depth = 0
-    for index in range(first, len(source)):
-        depth += (source[index] == "{") - (source[index] == "}")
-        if not depth:
-            return source[start:index + 1], index + 1
-    raise AssertionError(f"Unclosed function {signature}")
 
 
 class WatcherPowerBspTest(unittest.TestCase):

@@ -19,7 +19,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from power_test_fixture import prepare_board_matrix
+from power_test_fixture import function_body, prepare_board_matrix
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "components/muse/muse_power_test.c"
@@ -168,10 +168,11 @@ class PowerTest(unittest.TestCase):
         self.assertLess(audio.index("i2s_new_channel"), audio.index("s_ptest_tx = tx"))
         self.assertLess(audio.index("s_ptest_tx = tx"), audio.index("i2s_channel_init_std_mode(tx"))
         self.assertLess(audio.index("s_ptest_rx = rx"), audio.index("i2s_channel_enable(tx"))
-        close = board.split("static esp_err_t ptest_audio_close(void)", 1)[1].split("static esp_err_t ptest_audio_open", 1)[0]
+        close, _ = function_body(board, "static esp_err_t ptest_audio_close(void)")
         self.assertIn("s_ptest_tx, s_ptest_rx", close)
         self.assertIn("i2s_channel_disable(channels[i])", close)
-        self.assertIn("out->backlight_duty == s_ptest_expected_duty", board)
+        readback, _ = function_body(board, "esp_err_t muse_ptest_board_readback(")
+        self.assertIn("out->backlight_duty == s_ptest_expected_duty", readback)
 
     def test_arm_ack_plan_and_bounds(self):
         ack = self.run_commands(arm(settle_ms=5000, capture_ms=20000))[0]
@@ -709,7 +710,8 @@ class PowerTest(unittest.TestCase):
         self.assertIn('esp_rom_install_channel_putc(1, NULL)', core)
         self.assertIn('esp_rom_install_channel_putc(2, NULL)', core)
         self.assertIn("esp_log_set_vprintf(capture_error_log)", core)
-        self.assertIn("if (s_dryrun || e || out->usb)", core)
+        power, _ = function_body(core, "static esp_err_t fw_power(muse_ptest_readback_t *out)")
+        self.assertIn("if (s_dryrun || e || out->usb)", power)
         self.assertIn("remember_error(); save_run();", core)
 
     def test_semantically_invalid_checksummed_journals_are_discarded(self):
@@ -766,21 +768,28 @@ class PowerTest(unittest.TestCase):
 
     def test_board_knob_source_contracts_and_cpu_veto_release(self):
         board = (ROOT / "components/muse/boards/board_sensecap_watcher.c").read_text()
-        apply = board.split("esp_err_t muse_ptest_board_apply(", 1)[1].split("static esp_err_t ptest_codec_byte", 1)[0]
+        apply, _ = function_body(board, "esp_err_t muse_ptest_board_apply(")
+        self.assertTrue(apply.rstrip().endswith("return ptest_apply_knobs(state->knobs);\n}"))
         self.assertLess(apply.index("ptest_revert_knobs()"), apply.index("ptest_audio_initialize()"))
         self.assertLess(apply.index("audio conflicts with parked pins"), apply.index("ptest_revert_knobs()"))
-        self.assertIn("codec register transport", board)
-        self.assertIn("ptest_codec_snapshot()", board)
+        readback, _ = function_body(board, "esp_err_t muse_ptest_board_readback(")
+        self.assertIn('ESP_RETURN_ON_ERROR(ptest_codec_snapshot(), TAG, "codec register transport")', readback)
         self.assertNotIn("value == expected ? ESP_OK : ESP_FAIL", board)
-        self.assertIn("gpio_deep_sleep_hold_en();", board)
-        self.assertTrue("gpio_sleep_sel_dis(lcd[i])" in board)
-        self.assertTrue("I2C_SDA, I2C_SCL, EXP_INT, KNOB_A, KNOB_B" in board)
-        self.assertTrue("CAM_SCLK, CAM_MOSI, CAM_MISO, CAM_CS, GPIO_NUM_46, GPIO_NUM_17, GPIO_NUM_18" in board)
+        prepare, _ = function_body(board, "esp_err_t muse_ptest_board_prepare_deep(bool held)")
+        self.assertIn("gpio_deep_sleep_hold_en();", prepare)
+        knobs, _ = function_body(board, "static esp_err_t ptest_apply_knobs(uint16_t knobs)")
+        isolate = knobs[knobs.index("if (knobs & MUSE_PTEST_GPIO_ISOLATE)"):]
+        self.assertIn("gpio_sleep_sel_dis(lcd[i])", isolate)
+        self.assertIn("ptest_snapshot(s_ptest_pull_pins", knobs)
+        self.assertIn("ptest_snapshot(s_ptest_unused_pins", knobs)
+        self.assertRegex(board, r"(?m)^static const gpio_num_t s_ptest_pull_pins\[\] = \{ I2C_SDA, I2C_SCL, EXP_INT, KNOB_A, KNOB_B \};$")
+        self.assertRegex(board, r"(?m)^static const gpio_num_t s_ptest_unused_pins\[\] = \{ CAM_SCLK, CAM_MOSI, CAM_MISO, CAM_CS, GPIO_NUM_46, GPIO_NUM_17, GPIO_NUM_18 \};$")
         source = SOURCE.read_text()
-        self.assertTrue("esp_sleep_pd_config(ESP_PD_DOMAIN_CPU, veto ? ESP_PD_OPTION_ON : ESP_PD_OPTION_OFF)" in source)
+        fw_apply, _ = function_body(source, "static esp_err_t fw_apply(const muse_ptest_state_t *state)")
+        self.assertIn("esp_sleep_pd_config(ESP_PD_DOMAIN_CPU, veto ? ESP_PD_OPTION_ON : ESP_PD_OPTION_OFF)", fw_apply)
         self.assertNotIn("esp_sleep_pd_config(ESP_PD_DOMAIN_CPU, ESP_PD_OPTION_AUTO)", source)
-        self.assertIn("esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL)", source)
-
+        prepare_deep, _ = function_body(source, "static esp_err_t fw_prepare_deep(const muse_ptest_state_t *state, int64_t us)")
+        self.assertIn("esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL)", prepare_deep)
 
 if __name__ == "__main__":
     unittest.main()

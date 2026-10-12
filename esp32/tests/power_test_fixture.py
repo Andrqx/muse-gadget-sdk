@@ -12,6 +12,25 @@
 from pathlib import Path
 
 
+def function_body(source, signature):
+    """One C function definition (skipping prototypes) and the offset past it.
+
+    Source-text contracts must target the function they describe: a slice that
+    runs on to the end of the file passes on any later occurrence.
+    """
+    start = source.index(signature)
+    first = source.index("{", start)
+    while ";" in source[start:first]:
+        start = source.index(signature, start + len(signature))
+        first = source.index("{", start)
+    depth = 0
+    for index in range(first, len(source)):
+        depth += (source[index] == "{") - (source[index] == "}")
+        if not depth:
+            return source[start:index + 1], index + 1
+    raise AssertionError(f"Unclosed function {signature}")
+
+
 def prepare_board_matrix(directory, root):
     source = (root / "components/muse/boards/board_sensecap_watcher.c").read_text()
     start = source.index("/* Board-owned descriptors:")
