@@ -15,8 +15,23 @@ Pick the lowest level that answers your question:
 | 2. Autonomous sweep on another ESP32 board here | Device-timestamped USB-free states, firmware evidence, guarded analysis, A/B/A comparisons, timer deep sleep | Board hooks and a state matrix for the diagnostic image | Level 1, `tools/power/power_sweep.py`, the C state machine |
 | 3. Autonomous sweep on another platform (Zephyr, other MCUs) | As level 2 | Port the state machine's platform boundary, or speak its line protocol natively | Level 1, `tools/power/power_sweep.py` |
 
-None of this authorizes hardware access. Flashing, opening serial ports and
-enabling PPK2 output each need the board owner's explicit go-ahead.
+Choosing the level:
+
+- Start at **level 1** for a first look, for hardware that isn't an ESP32 in
+  this repo, or when the states you care about can be driven without USB
+  (BLE, buttons, a timer already on the device).
+- Go to **level 2** when you need device-timestamped states, firmware evidence
+  that each state was actually applied, A/B/A comparisons or timer deep sleep
+  on an ESP32 board this firmware supports.
+- **Level 3** is level 2 for another platform: port the core or speak its
+  protocol.
+
+None of this authorizes hardware access. Flashing, opening serial ports,
+enabling PPK2 output and asking someone to unplug or power-cycle a board each
+need the board owner's explicit go-ahead for that action; until then, use host
+tests and emulation. Read [ppk2.md](ppk2.md) before any PPK2 use: it holds the
+safety rules, the single continuous source owner and the capture acceptance
+checks that every level depends on.
 
 ## 0. Fixture (every level)
 
@@ -35,7 +50,8 @@ and record the answers next to your results.
    to VBAT, USB present means charging into the PPK2. Decide, from the actual
    power path, whether brief overlap is acceptable or needs a blocking diode,
    ideal diode or charger disable. Record the basis (measured, datasheet, or
-   operator assertion); don't claim protection that isn't fitted.
+   operator assertion); don't claim protection that isn't fitted. See
+   [the fixture is the operator's assertion](ppk2.md#the-fixture-is-the-operators-assertion).
 4. **Source voltage.** Choose an explicit setpoint in millivolts inside the
    battery's and PMU's range (3872 mV was a Li-ion example). A series diode
    lowers the voltage at the board; measure it under load if you want DUT
@@ -58,9 +74,8 @@ and record the answers next to your results.
 ## 1. Any device: labelled source capture
 
 No firmware changes. One long-lived PPK2 owner keeps source power continuous
-while you label windows from the host. Follow the PPK2 skill
-(`../../../.claude/skills/ppk2-power-profile/SKILL.md`) for install, safety
-acknowledgments and recovery. In outline:
+while you label windows from the host. [ppk2.md](ppk2.md) covers install,
+safety acknowledgments, the control handshake and recovery. In outline:
 
 ```sh
 cd esp32
@@ -73,7 +88,8 @@ tools/power/.venv/bin/python tools/power/ppk2_profile.py hold \
   --output "$RUN/ppk.jsonl" --control-dir "$RUN/control"
 ```
 
-After READY, remove DUT USB. Put the device in each state by something that
+After READY and a passing [preflight](ppk2.md#preflight-before-usb-comes-out),
+remove DUT USB. Put the device in each state by something that
 doesn't need USB (BLE/NUS, a button, a timed script already on the device),
 wait for it to settle, then label a window:
 
@@ -188,7 +204,7 @@ board-neutral core and board hooks:
    `compare`.
 10. **Publish** a scrubbed CSV and findings like
     `sensecap-watcher-sleep-findings.md`: no serial numbers, boot/run IDs,
-    host paths or network names.
+    host paths, network names or credentials.
 
 ## 3. Other platforms (Zephyr, other MCUs)
 
@@ -217,9 +233,8 @@ there are two routes; neither has been done yet for a non-ESP32 device.
 
 - **Host load.** The PPK2 streams 400 kB/s; a busy host (parallel compilers,
   endpoint agents) can stall the consumer. Use `--receiver-max-bytes 16777216`,
-  pause other builds, and require the idle and statistics preflights to pass
-  (99–101% coverage, zero loss, backlog plus consumer delay under 0.5 s)
-  before removing USB. Check health from the FIFO while USB is out.
+  pause other builds, and pass the
+  [preflight](ppk2.md#preflight-before-usb-comes-out) before removing USB.
 - **Cold means power-cycled.** See section 0, item 7.
 - **Keep the protocol UART clean.** Route logs away from it, mute ROM printf
   sinks, and drain TX before parking UART pins. The Watcher dry run caught

@@ -208,8 +208,9 @@ reach the device and control it.
 
 ## Power characterization
 
-For the SenseCAP Watcher and Nordic PPK2, see the
-[USB-free power profiling setup](docs/power/sensecap-watcher.md). The opt-in
+Start at [Power profiling](docs/power/README.md). Read the
+[PPK2 rules](docs/power/ppk2.md) before any PPK2 use; the SenseCAP Watcher has
+its own [USB-free procedure](docs/power/sensecap-watcher.md). The opt-in
 power-test image runs an autonomous, timestamped peripheral sweep after USB
 is removed; one PPK2 process keeps source power continuous through reconnect.
 Battery isolation and USB-charger backfeed protection are required before
@@ -223,10 +224,6 @@ and board-owned matrices; no core rename is needed. The shared host CLI is
 [`tools/power/power_sweep.py`](tools/power/power_sweep.py). Its analyzer uses the
 firmware-reported board name, with `--device` as an override and Watcher as the
 legacy-only fallback.
-
-Repository engineering skills live in `../.claude/skills/ppk2-power-profile/`,
-`../.claude/skills/sensecap-watcher-power-tests/` and
-`../.claude/skills/board-power-profiling/`.
 
 ## Hack and extend it
 

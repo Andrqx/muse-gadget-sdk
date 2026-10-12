@@ -292,14 +292,21 @@ On a classic ESP32 (see `board_m5stack_stickc_plus2.c`):
 
 If you don't have the board, say that the port was only built, not run.
 
-## 9. Optional: measure its power
+## 9. Power measurement
 
-For a battery-powered board, `../docs/power/README.md` is the recipe for
-measuring it with a Nordic PPK2 on the battery input: labelled captures need
-no firmware changes. The shared `CONFIG_MUSE_POWER_TEST` diagnostic is already
-board-neutral: implement `muse_ptest_board_*` from
-`../components/muse/boards/muse_power_test_board.h`, including the board name
-and immutable state matrices, then extend its supported-board Kconfig list.
-Use `../tools/power/power_sweep.py`; do not fork or rename the shared core.
-Keep Watcher conformance tests green. Fixture checks and owner authorization
-come first.
+Optional, for battery-powered boards. Measuring with a Nordic PPK2 on the
+battery input is documented in `docs/power/`; read the doc that matches the
+job before touching hardware:
+
+| When | Read |
+|---|---|
+| Before any PPK2 use: authorization and fixture gates, host setup, the single continuous source owner, the control handshake, accepting a capture | [`docs/power/ppk2.md`](../docs/power/ppk2.md) |
+| Profiling a new board or device: choosing a level, the fixture checklist, porting the `CONFIG_MUSE_POWER_TEST` diagnostic | [`docs/power/README.md`](../docs/power/README.md) |
+| Running or extending the SenseCAP Watcher sweep | [`docs/power/sensecap-watcher.md`](../docs/power/sensecap-watcher.md) |
+
+The diagnostic core is already board-neutral: implement `muse_ptest_board_*`
+from `components/muse/boards/muse_power_test_board.h`, including the board
+name and immutable state matrices, and extend its supported-board Kconfig
+list. Use `tools/power/power_sweep.py`; do not fork or rename the core, and
+keep the Watcher conformance tests green. The board owner's authorization and
+the fixture checks come before any hardware step.

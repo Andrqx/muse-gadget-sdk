@@ -93,14 +93,15 @@ Muse requires tokens. Never commit the token or print it in full.
 
 The opt-in `CONFIG_MUSE_POWER_TEST` image is an isolated board-load
 characterization harness, not a pairing application, and needs no SDK token or
-network credentials. Its separate build, electrical safety gates, continuous
-PPK2 ownership, and USB unplug/replug procedure are documented in
-`docs/power/sensecap-watcher.md`. Never enable source output with unknown
-wiring, a connected battery, or USB-charger backfeed into PPK2. To profile
-another board, follow `docs/power/README.md`: the shared
-`muse_power_test_run()` core uses `boards/muse_power_test_board.h` hooks and
-board-owned matrices. Use `tools/power/power_sweep.py`; do not fork or rename
-the core for the next board.
+network credentials. Power measurement starts at `docs/power/README.md`. Read
+`docs/power/ppk2.md` before any PPK2 use (authorization and fixture gates,
+continuous source ownership, USB unplug/replug), and
+`docs/power/sensecap-watcher.md` for the Watcher's build and procedure. Never
+enable source output with unknown wiring, a connected battery, or
+USB-charger backfeed into PPK2. Other boards reuse the shared
+`muse_power_test_run()` core through `boards/muse_power_test_board.h` hooks
+and board-owned matrices, driven by `tools/power/power_sweep.py`; do not fork
+or rename the core for the next board.
 
 ### DevKitC-1 (default)
 

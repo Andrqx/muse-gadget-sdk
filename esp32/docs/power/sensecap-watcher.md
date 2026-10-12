@@ -1,7 +1,10 @@
 # SenseCAP Watcher: USB-free PPK2 power profiling
 
-For other boards and devices, start with the [porting recipe](README.md);
-this page is its worked example.
+The procedure for profiling a Seeed SenseCAP Watcher's USB-free states with a
+Nordic PPK2, for an agent or a person running it. Read [ppk2.md](ppk2.md)
+first: its safety rules, single continuous source owner and capture
+acceptance checks apply to every step here. For other boards and devices,
+start with the [porting recipe](README.md); this page is its worked example.
 
 ## Measurement status
 
@@ -66,6 +69,8 @@ Before enabling source mode:
 
 Do not short the Temp pin to GND to bypass charging protection. Do not enable
 charging into the PPK. If the wiring is unknown, stop before output ON.
+Flashing and console access need the operator's authorization too: never
+flash another connected board, and never change security eFuses.
 
 The measurement is total current entering the selected board input. It
 includes conversion losses and other loads on that input. One-feature-at-a-time
@@ -75,6 +80,50 @@ This minimum sweep does not separately exercise PSRAM traffic, SD/Grove loads,
 standalone touch polling, or RTC features. These remain uncharacterized rather
 than being inferred from an idle baseline; the explicit radio/camera/deep-sleep
 skips are listed below.
+
+## Run checklist
+
+Each step needs the authorization and fixture confirmation in
+[ppk2.md](ppk2.md#authorization-comes-first); the sections below hold the
+commands and details. Paths are relative to `esp32/`. Use a fresh run
+directory and explicit ports, with no credentials in commands or committed
+results.
+
+1. **Identify the Watcher's ESP32 console**, the second CH342 interface (the
+   first is the Himax coprocessor; never flash it). Confirm the running
+   firmware's board name with `tools/muse/chat.py --status` when available.
+   See [Software setup](#software-setup).
+2. **Build** `build-muse-watcher-power-test`, run the host tests and check the
+   partition sizes. Preserve NVS and existing factory backups. The image needs
+   no account or SDK token. See
+   [Build and flash](#build-and-flash-the-diagnostic-image).
+3. **Flash** with `tools/muse/paced_esptool.py` at 115200 baud using that
+   build's `@flash_args`, never plain `idf.py flash`. Let it finish, then check
+   for the diagnostic ready reply and no panic or reset loop.
+4. **Optionally rehearse** with the [USB-only dry run](#usb-only-transition-dry-run).
+   It consumes cold codec state: fully power-cycle before a cold quantitative
+   sweep.
+5. **Start the PPK2 owner** (`ppk2_profile.py hold`) with Watcher USB still
+   connected and pass the [preflight](ppk2.md#preflight-before-usb-comes-out).
+   READY and a fault-free `status` prove software ownership, not wiring.
+6. **Arm** with `power_sweep.py arm` and check the emitted plan (state count,
+   matrix, conservative duration). Do not re-arm blindly after a timeout: the
+   outcome may be unknown, so ask for status first. See
+   [Matrix selection](#matrix-selection-and-protocol).
+7. **Only then prompt the operator**: "Unplug all Watcher USB cables now. Leave
+   PPK USB and source wiring connected." The device starts on actual VBUS
+   absence; no BLE connection is needed for radio-off states.
+8. **Wait the bound reported by `arm`**, measured from unplugging, then prompt
+   the operator to reconnect Watcher USB. Elapsed time is not success.
+9. **Collect** with `power_sweep.py collect --usb-reconnected` while the owner
+   is still ON; only its confirmation releases source power.
+10. **Analyze** with `power_sweep.py analyze` (and `compare`). Keep raw
+    acquisition local; publish only reviewed, scrubbed results.
+
+On any failure, reconnect Watcher USB safely before an explicit PPK2 finish.
+Never unplug the PPK2 or terminate its process while it is the only source,
+and do not restart source mode, auto-reset hardware or erase NVS as generic
+recovery.
 
 ## Software setup
 
@@ -127,13 +176,15 @@ python ../tools/muse/paced_esptool.py --chip esp32s3 -p "$DUT_PORT" -b 115200 \
 
 Do not interrupt the several-minute flash. Verify the boot identifies the
 power-test image and reaches its ready console without panic/reboot loops.
+Before flashing, run the host tests
+(`python3 -m unittest discover -s tests -p 'test_*.py'`) and check the
+`check_sizes` line of the build.
 
 ## Continuous-power lifecycle
 
-One process owns PPK2 from **before USB removal** through **confirmed USB
-reconnection**. Starting a power keeper, killing it, and reopening the PPK to
-measure is not an acceptable handoff. Neither state boundaries nor duration
-expiry switches power off.
+The [owner rules](ppk2.md#one-continuous-owner) apply unchanged: one process
+owns PPK2 from **before USB removal** through **confirmed USB reconnection**,
+and neither state boundaries nor duration expiry switch power off.
 
 Keep the Watcher USB plugged in. Once the electrical prerequisites have
 actually been verified, start the owner in a persistent terminal (or an
@@ -148,11 +199,15 @@ tools/power/.venv/bin/python tools/power/ppk2_profile.py hold \
 ```
 
 The acknowledgment flags record a verified setup; they do not make unknown
-wiring safe. Wait for the owner's READY message and fault-free sample drain.
-If serial permissions are denied, use a user-authorized hardware-access
-session; this skill does not grant permission or disable a sandbox.
+wiring safe. Wait for the owner's READY message and fault-free sample drain,
+and pass the [preflight](ppk2.md#preflight-before-usb-comes-out). If serial
+access is denied, get access the operator authorizes; this page grants no
+permission and never replaces a sandbox or access policy.
 
-Arm the actual USB-gated firmware sequence without reopening PPK:
+Arm the actual USB-gated firmware sequence without reopening PPK. `arm`
+begins a `power-sweep` recording through the existing owner, bounds the UART
+clock mapping, and requires the Watcher's VBUS-present acknowledgment. If it
+times out, the outcome is unknown: query status before trying again.
 
 ```sh
 tools/power/.venv/bin/python tools/power/power_sweep.py arm \
@@ -163,8 +218,8 @@ tools/power/.venv/bin/python tools/power/power_sweep.py arm \
 
 Only after both the PPK owner and firmware acknowledge readiness:
 
-1. Prompt the operator to remove **all Watcher USB power**. Leave PPK USB and
-   the verified fixture connected. The firmware starts on actual VBUS absence,
+1. Prompt the operator: **"Unplug all Watcher USB cables now. Leave PPK USB and
+   source wiring connected."** The firmware starts on actual VBUS absence,
    not on the host's guess or the time the question was displayed.
 2. Do not use USB logs during measurement. The independent sweep applies each
    state, waits for settling, and captures fixed intervals. Current acquisition
@@ -197,6 +252,15 @@ error/status, and hardware configuration/readback. Planned
 but unsupported states are explicitly skipped, never successful zero-current
 results. The baseline is repeated before/after groups to identify failure to
 restore a peripheral or hysteresis.
+
+- Keep planned, applied, functionally observed, skipped and rejected states
+  apart in every report. An empty capture is not zero current.
+- A failed peripheral transition stops the sweep; it is never averaged in as a
+  low-power success.
+- Rail power is not proof of operation: do not relabel a powered camera rail
+  as a working camera.
+- Internal pull and wake changes are diagnostic knobs, not production-ready
+  fixes.
 
 ### Matrix selection and protocol
 
@@ -486,12 +550,8 @@ The capture/receiver remains **INVALID** after the fault; this does not validate
 later continuation, prove a complete capture, change the conditional timing
 model, or authorize source restart/shutdown.
 
-The raw receiver's separate entry cap now scales with its byte capacity:
-`max(4096, ceil(capacity_bytes / 1024))`, bounded at 16384 entries. A 16 MiB
-budget therefore permits roughly 1 KiB chunks to approach its byte cap rather
-than overflowing at 4096 entries near 4 MiB. Tiny chunks can still exhaust the
-bounded metadata cap. Overflow remains latched, queued continuation invalid,
-and raw drain/continuous source ownership unchanged.
+The raw receiver's queue and entry caps are described in
+[ppk2.md](ppk2.md#raw-receiver).
 
 Publish current mean/min/max, sample count/coverage, included duration,
 settling/guard, sampled charge, source-voltage-basis energy, and measurement
@@ -504,7 +564,9 @@ explicitly appropriate to publish them.
 For a suspected fix, compare A/B/A at the same voltage/config/stimulus, check
 function/wake recovery, and report repeat variability. Attribute a power fix
 only after hardware evidence shows improvement; static code inspection alone
-is not a measured finding.
+is not a measured finding. A pull request for a fix states its setup,
+findings and limitations truthfully; never merge or change someone else's
+pull request without their authorization.
 
 ## References
 
