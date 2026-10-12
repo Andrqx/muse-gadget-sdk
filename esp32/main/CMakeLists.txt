@@ -54,6 +54,7 @@ set(GADGET_REQUIRES
     noise_core
     product_info
     bt
+    esp_psram
     driver
     esp_driver_gpio
     esp_driver_i2c

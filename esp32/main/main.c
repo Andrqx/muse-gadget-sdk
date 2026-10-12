@@ -16,6 +16,10 @@
 
 #include "app.h"
 #include "esp_log.h"
+#include "sdkconfig.h"
+#if CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP
+#include "esp_psram.h"
+#endif
 #include "diagnostic_log.h"
 #if CONFIG_MUSE_ENABLED
 #include "muse_glue.h"
@@ -29,6 +33,13 @@ void app_main(void) {
     }
 #endif
     ESP_LOGI("link.main", CONFIG_GADGET_PRODUCT_NAME " starting");
+#if CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP
+    // The C5's TCP windows are sized for lwIP buffers in PSRAM
+    // (sdkconfig.defaults.esp32c5). Without it they fall back to internal RAM.
+    if (!esp_psram_is_initialized()) {
+        ESP_LOGE("link.main", "PSRAM did not start: network buffers fall back to internal RAM");
+    }
+#endif
 #if CONFIG_MUSE_ENABLED
     muse_glue_start();
 #endif

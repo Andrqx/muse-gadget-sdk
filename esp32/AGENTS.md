@@ -418,6 +418,12 @@ The device still needs to be paired once for its token.
 
 ## Configuration gotchas
 
+- `sdkconfig.defaults.esp32c5` is loaded after `sdkconfig.defaults` for C5
+  builds only (ESP-IDF's target-specific defaults): it moves lwIP and Wi-Fi
+  heap buffers to PSRAM, raises the TCP windows to 64 KiB and deepens the
+  receive path to match (64 dynamic RX buffers, 12 queued out-of-order
+  segments). Other chips keep 16 KiB windows in internal RAM;
+  `cmake/validate_config.cmake` enforces both.
 - Each build's generated `sdkconfig` lives in its build directory
   (`build/sdkconfig`, `build-<board>/sdkconfig`). Once it exists, it overrides
   later edits to `sdkconfig.defaults` or the overlays. After changing those,
