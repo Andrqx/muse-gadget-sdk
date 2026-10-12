@@ -87,11 +87,12 @@ int ble_client_connect(const uint8_t addr[6], uint8_t type, uint32_t timeout, bl
     out->conn = 1; memcpy(out->addr, addr, 6); out->addr_type = type; out->mtu = 247; out->central = true;
     return 0;
 }
-int ble_client_disconnect(uint16_t conn) { return conn == 1 ? 0 : BLE_CLIENT_ENOCONN; }
+static int g_disconnects;
+int ble_client_disconnect(uint16_t conn) { g_disconnects++; return conn == 1 ? 0 : BLE_CLIENT_ENOCONN; }
 int ble_client_connections(ble_client_conn_info_t *out, int max) {
     if (max < 1) return 0;
     memset(out, 0, sizeof(*out));
-    out->conn = 1; out->mtu = 247;
+    out->conn = 1; out->mtu = 247; out->central = true;
     return 1;
 }
 int ble_client_secure(uint16_t conn, uint32_t timeout) { (void)conn; (void)timeout; g_secure_calls++; return 0; }
@@ -350,6 +351,15 @@ int main(void) {
     assert(!ok(r) && !cJSON_GetObjectItem(r, "payload"));
     cJSON_Delete(r);
     g_scan_rc = 0;
+
+    // The session ends: the connection Muse opened is closed and Wi-Fi gets
+    // its radio priority back.
+    g_disconnects = 0;
+    r = run("ble.power", "{\"enabled\": true, \"wifi_first\": false}");
+    assert(ok(r) && !g_wifi_first);
+    cJSON_Delete(r);
+    ble_commands_cleanup();
+    assert(g_disconnects == 1 && g_wifi_first);
 
     // Disconnect, then power off drops the client's state.
     r = run("ble.disconnect", "{\"conn\": 1}");

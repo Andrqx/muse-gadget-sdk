@@ -827,6 +827,17 @@ void ble_commands_register(cJSON *commands) {
 
 // ---- worker -------------------------------------------------------------------
 
+void ble_commands_cleanup(void) {
+    ble_client_conn_info_t info[BLE_CLIENT_MAX_CONNS];
+    int n = ble_client_connections(info, BLE_CLIENT_MAX_CONNS);
+    for (int i = 0; i < n; i++) {
+        if (info[i].central) (void)ble_client_disconnect(info[i].conn);
+    }
+    if (s_ops.set_wifi_first && s_ops.wifi_first && !s_ops.wifi_first()) {
+        s_ops.set_wifi_first(true);
+    }
+}
+
 #ifndef BLE_COMMANDS_HOST_TEST
 
 typedef struct {
@@ -838,15 +849,29 @@ typedef struct {
 
 static QueueHandle_t s_jobs;
 
+// A NULL job is ble_commands_session_ended()'s cleanup, in queue order.
 static void worker(void *arg) {
     (void)arg;
     job_t *job;
     for (;;) {
         if (xQueueReceive(s_jobs, &job, portMAX_DELAY) != pdTRUE) continue;
+        if (!job) {
+            ble_commands_cleanup();
+            continue;
+        }
         cJSON *result = ble_commands_run(job->command, job->params);
         noise_ctrl_send_command_result(job->session_generation, job->request_id, result);
         cJSON_Delete(job->params);
         free(job);
+    }
+}
+
+void ble_commands_session_ended(void) {
+    if (!s_jobs) return;   // no command has run: nothing to clean up
+    job_t *cleanup = NULL;
+    // The queue holds at most 4 commands; wait briefly rather than skip.
+    if (xQueueSend(s_jobs, &cleanup, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGW("link.ble_cmd", "session ended: BLE cleanup not queued");
     }
 }
 

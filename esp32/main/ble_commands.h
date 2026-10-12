@@ -57,6 +57,15 @@ bool ble_commands_handles(const char *command);
 cJSON *ble_commands_handle(const char *command, const cJSON *params,
                            const char *request_id, uint64_t session_generation);
 
+// The Muse session ended. Nothing owns the connections and subscriptions it
+// opened any more, so they are closed, and Wi-Fi gets its radio priority back
+// if a command took it. Returns at once; the work runs on the command task
+// after the command in progress, and before any from a later session.
+void ble_commands_session_ended(void);
+
+// What ble_commands_session_ended() does, now, on the calling task.
+void ble_commands_cleanup(void);
+
 // Run one command now, on the calling task, and return its result
 // ({"ok": true, "payload": ...} or an error). The worker uses this; so do
 // the host tests.

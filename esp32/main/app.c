@@ -2477,6 +2477,9 @@ static void on_ws_control_status(const char *status) {
         ESP_LOGI(TAG, "control WebSocket disconnected");
         led_status_set_state(LED_STATE_WS_DISCONNECTED);
         tunnel_netif_set_link(false);
+#if CONFIG_HOMEHUB_BLE_COMMANDS
+        ble_commands_session_ended();   // close what Muse's BLE commands opened
+#endif
     } else if (strcmp(status, "ws_unpaired") == 0) {
         strcpy(s_ui_ws, "down");
         ESP_LOGW(TAG, "server sent node.unpaired — clearing credentials and restarting");
