@@ -46,6 +46,16 @@ if((NOT CONFIG_LWIP_TCP_SND_BUF_DEFAULT EQUAL 16384 OR
         "ESP32 Device SDK requires TCP send buffer and receive window 16384 (up to 65535 on the C5 with sdkconfig.defaults.esp32c5: PSRAM, CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP, 64+ dynamic RX buffers and 1-12 out-of-order segments; 5760 on the no-tunnel Cardputer ADV and AI Passport) for DMA headroom. ${GADGET_CONFIG_REGEN_HINT}")
 endif()
 
+# With BLE kept up after setup, the gadget keeps advertising a connectable
+# service. Any nearby device may connect to it and hold the connection, so a
+# single NimBLE connection would let it lock out everything else on BLE (the
+# Link's own central connections). Peripheral links stay at one (advertising
+# stops while one is up), so two or more leave room.
+if(CONFIG_HOMEHUB_BLE_PERSISTENT AND CONFIG_BT_NIMBLE_MAX_CONNECTIONS LESS 2)
+    message(FATAL_ERROR
+        "CONFIG_HOMEHUB_BLE_PERSISTENT needs CONFIG_BT_NIMBLE_MAX_CONNECTIONS of at least 2, so a device holding the advertised service can't take the only BLE connection (tools/coexist/sdkconfig.ble-persist sets it). ${GADGET_CONFIG_REGEN_HINT}")
+endif()
+
 # A token from gadgets.muse.ai is mgst_ plus 43 canonical base64url characters.
 # Manufacturer builds pair with fleet attestation instead, and internal builds
 # without a token disable CONFIG_GADGET_SDK_TOKEN_WARN.

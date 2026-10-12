@@ -435,6 +435,16 @@ The device still needs to be paired once for its token.
 - OTA is off by default (`CONFIG_HOMEHUB_OTA_ENABLED=n`, version `999.0.0`),
   except on boards with the full UI. Set a version with `-DPROJECT_VER=1.0.0` or
   `version.txt`.
+- BLE is shut down and its memory released once setup completes, except on
+  boards with the full UI. `CONFIG_HOMEHUB_BLE_PERSISTENT` keeps NimBLE up
+  beside Wi-Fi with a basic GATT service (`main/ble_basic.c`) advertised
+  slowly; it costs roughly 40 KB of internal RAM for as long as the device
+  runs (`tools/coexist/sdkconfig.ble-mem` wins most of it back on the C5).
+  On the C5, `CONFIG_HOMEHUB_BLE_COEX` (`main/ble_coex.c`) keeps BLE
+  advertising and connections from reserving half the radio's airtime once
+  setup is complete, which doubles Wi-Fi throughput with BLE up. It relies
+  on ESP-IDF's private coexistence status bits, so it builds on IDF v6.0.x
+  only until the bits are rechecked on another version.
 - On the C5 with PSRAM, `CONFIG_HOMEHUB_FAST_GCM` (default on there) wraps
   ESP-IDF's one-shot AES-GCM with `main/fast_gcm.c` for TLS and Noise. It
   takes about 19 KB of internal RAM (8-bit GHASH tables and the PSRAM staging

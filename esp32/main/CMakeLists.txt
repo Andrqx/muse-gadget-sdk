@@ -16,6 +16,9 @@ set(GADGET_SRCS
     "main.c"
     "app.c"
     "ble_server.c"
+    "ble_basic.c"
+    "ble_central.c"
+    "ble_coex.c"
     "ghash32.c"
     "fast_gcm.c"
     "wifi_mgr.c"
@@ -55,6 +58,7 @@ set(GADGET_REQUIRES
     product_info
     bt
     esp_psram
+    esp_coex
     driver
     esp_driver_gpio
     esp_driver_i2c
@@ -129,4 +133,14 @@ if(CONFIG_HOMEHUB_FAST_GCM)
         "-Wl,--wrap=esp_aes_gcm_auth_decrypt"
         "-Wl,-u,__wrap_esp_aes_gcm_crypt_and_tag"
         "-Wl,-u,__wrap_esp_aes_gcm_auth_decrypt")
+endif()
+
+# ble_coex.c sits between the BLE controller and the coexistence scheduler
+# (both in prebuilt archives, so the linker can redirect the calls).
+if(CONFIG_HOMEHUB_BLE_COEX)
+    target_link_libraries(${COMPONENT_LIB} INTERFACE
+        "-Wl,--wrap=coex_schm_status_bit_set"
+        "-Wl,--wrap=coex_schm_status_bit_clear"
+        "-Wl,-u,__wrap_coex_schm_status_bit_set"
+        "-Wl,-u,__wrap_coex_schm_status_bit_clear")
 endif()
