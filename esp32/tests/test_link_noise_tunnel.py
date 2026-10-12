@@ -67,7 +67,8 @@ class LinkNoiseTunnelTest(unittest.TestCase):
                                   if line.startswith(("#define CTRL_STREAM_ID",
                                                       "#define CTRL_BODY_CHUNK_MAX",
                                                       "#define OUT_SVC_SCRATCH",
-                                                      "#define OUT_ENV_SCRATCH")))
+                                                      "#define OUT_ENV_SCRATCH",
+                                                      "#define WS_HEADROOM")))
             ws_start = control.index("#if CONFIG_SPIRAM\n#define WS_BUF_SIZE")
             ws_end = control.index("#endif", ws_start) + len("#endif")
             constants += "\n" + control[ws_start:ws_end]

@@ -18,6 +18,7 @@
 #include "stack_monitor.h"
 #include "noise_upgrade.h"
 #include "noise_tunnel_internal.h"
+#include "ws_mask.h"
 
 #include <cstring>
 #include <cstdlib>
@@ -135,6 +136,11 @@ static char s_noise_host[256] = NOISE_DEFAULT_HOST;
 // outbound frames are bounded by OUT_ENV_SCRATCH and inbound ones by
 // SVC_FRAME_SCRATCH (the decrypted frame must fit there), so without PSRAM use
 // buffers just large enough for those plus framing and the AEAD tag.
+// Free bytes kept in front of the outbound WebSocket payload in ws_buf, so the
+// frame header (at most 14 bytes) can go in front of it and the frame leave in
+// one TLS write. 32 also keeps the payload, which Noise seals in place,
+// aligned to a cache line for the AES DMA.
+#define WS_HEADROOM 32
 #if CONFIG_SPIRAM
 #define WS_BUF_SIZE ClientSession::kMaxOutboundWebSocketPayloadSize
 #elif CARDPUTER_CONTROL_SESSION
@@ -299,25 +305,64 @@ static bool ws_send_binary(esp_tls_t *tls, const uint8_t *payload, size_t len) {
     memcpy(hdr + hdr_len, &mask_key, 4);
     hdr_len += 4;
 
-    if (write_all(tls, hdr, hdr_len) != static_cast<ssize_t>(hdr_len)) {
-        return false;
-    }
-
-    // Mask and send payload in chunks to avoid a full copy.
+    // Mask into a stack chunk, the header riding in the first one, so a short
+    // frame (the handshake) is one TLS record. Frames from ws_buf take
+    // ws_send_frame_inplace() instead.
     const uint8_t *mk = reinterpret_cast<const uint8_t *>(&mask_key);
     uint8_t chunk[512];
+    memcpy(chunk, hdr, hdr_len);
+    size_t fill = hdr_len;
     size_t off = 0;
-    while (off < len) {
-        size_t n = (len - off < sizeof(chunk)) ? (len - off) : sizeof(chunk);
+    do {
+        size_t n = len - off;
+        if (n > sizeof(chunk) - fill) n = sizeof(chunk) - fill;
         for (size_t i = 0; i < n; i++) {
-            chunk[i] = payload[off + i] ^ mk[(off + i) & 3];
+            chunk[fill + i] = payload[off + i] ^ mk[(off + i) & 3];
         }
-        if (write_all(tls, chunk, n) != static_cast<ssize_t>(n)) {
+        fill += n;
+        if (write_all(tls, chunk, fill) != static_cast<ssize_t>(fill)) {
             return false;
         }
         off += n;
-    }
+        fill = 0;
+    } while (off < len);
     return true;
+}
+
+// Send a masked binary WS frame whose payload sits at `payload` with at least
+// WS_HEADROOM writable bytes in front of it. The payload is masked in place
+// and the header written in front of it, so the frame leaves in ONE TLS write:
+// one record (up to CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN) instead of one per
+// 512-byte chunk, and one AES-GCM pass. The payload is scratch afterwards.
+static bool ws_send_frame_inplace(esp_tls_t *tls, uint8_t *payload, size_t len) {
+    uint8_t hdr[14];
+    size_t hdr_len;
+    hdr[0] = 0x82; // FIN | binary
+    if (len < 126) {
+        hdr[1] = 0x80 | static_cast<uint8_t>(len);
+        hdr_len = 2;
+    } else if (len <= 65535) {
+        hdr[1] = 0x80 | 126;
+        hdr[2] = static_cast<uint8_t>((len >> 8) & 0xff);
+        hdr[3] = static_cast<uint8_t>(len & 0xff);
+        hdr_len = 4;
+    } else {
+        hdr[1] = 0x80 | 127;
+        for (int i = 0; i < 8; i++) {
+            hdr[2 + i] = static_cast<uint8_t>((len >> (56 - 8 * i)) & 0xff);
+        }
+        hdr_len = 10;
+    }
+    uint32_t mask_key = esp_random();
+    memcpy(hdr + hdr_len, &mask_key, 4);
+    hdr_len += 4;
+
+    ws_mask_inplace(payload, len, reinterpret_cast<const uint8_t *>(&mask_key));
+
+    uint8_t *frame = payload - hdr_len;
+    memcpy(frame, hdr, hdr_len);
+    size_t total = hdr_len + len;
+    return write_all(tls, frame, total) == static_cast<ssize_t>(total);
 }
 
 // Send a zero-length masked WebSocket ping (opcode 0x9). The peer (the LB /
@@ -776,15 +821,18 @@ static bool noise_handshake(esp_tls_t *tls, ClientSession &session,
 
 static bool flush_outbound(esp_tls_t *tls, ClientSession &session,
                            uint8_t *ws_buf) {
+    // The payload goes WS_HEADROOM into ws_buf so its frame header fits in
+    // front of it (ws_send_frame_inplace).
+    uint8_t *payload = ws_buf + WS_HEADROOM;
     while (session.HasOutboundWebSocketPayload()) {
-        ByteSpan ws_span(ws_buf, WS_BUF_SIZE);
+        ByteSpan ws_span(payload, WS_BUF_SIZE);
         auto sws = session.WriteNextOutboundWebSocketPayload(ws_span);
         if (!sws.ok()) {
             ESP_LOGE(TAG, "WriteNextOutboundWebSocketPayload failed: %s",
                      sws.status().str());
             return false;
         }
-        if (!ws_send_binary(tls, ws_buf, sws.size())) {
+        if (!ws_send_frame_inplace(tls, payload, sws.size())) {
             ESP_LOGE(TAG, "ws_send_binary failed");
             return false;
         }
@@ -1910,10 +1958,13 @@ static session_result_t run_session(stack_monitor_t *stack) {
     PsaCryptoBackend crypto;
     ClientSession session(crypto);
 
-    size_t ws_buf_size = WS_BUF_SIZE;
-    ws_buf = static_cast<uint8_t *>(
-        heap_caps_malloc(ws_buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (!ws_buf) ws_buf = static_cast<uint8_t *>(malloc(ws_buf_size));
+    // WS_HEADROOM in front of the payload for its frame header; the buffer is
+    // cache-line aligned so the payload Noise seals in place is too.
+    size_t ws_buf_size = WS_HEADROOM + WS_BUF_SIZE;
+    ws_buf = static_cast<uint8_t *>(heap_caps_aligned_alloc(
+        WS_HEADROOM, ws_buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!ws_buf) ws_buf = static_cast<uint8_t *>(heap_caps_aligned_alloc(
+        WS_HEADROOM, ws_buf_size, MALLOC_CAP_8BIT));
 
     rx_buf = static_cast<uint8_t *>(
         heap_caps_malloc(WS_RX_BUF_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
