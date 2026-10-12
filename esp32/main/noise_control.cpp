@@ -987,17 +987,16 @@ static bool tunnel_send_body(void *vctx, const uint8_t *data, size_t len) {
 
 // The same, encoding and encrypting the batch where it sits in its tunnel
 // slot (noise_tunnel.cpp): no copy into the service, envelope and WebSocket
-// buffers. Falls back to the copying path if the session can't (another
-// outbound message mid-flight).
+// buffers. It fails, like the copying path, when the session isn't
+// established or another outbound message is mid-flight: every send here
+// flushes its frames before returning, so the latter means the session is
+// broken, and the caller drops the batch and rechecks the session.
 static bool tunnel_send_body_inplace(void *vctx, uint8_t *buf, size_t headroom,
                                      size_t len, size_t tailroom) {
     auto *c = static_cast<tunnel_emit_ctx *>(vctx);
     auto r = c->session->SealBodyChunkInPlace(
         ServiceType::Daemon, TUNNEL_STREAM_ID,
         ByteSpan(buf, headroom + len + tailroom), headroom, len);
-    if (r.status.IsFailedPrecondition() && c->session->isEstablished()) {
-        return tunnel_send_body(vctx, buf + headroom, len);
-    }
     if (!r.status.ok() || r.offset < 14) {
         ESP_LOGE(TAG, "tunnel SealBodyChunkInPlace failed: %s (offset %u)",
                  r.status.str(), (unsigned)r.offset);

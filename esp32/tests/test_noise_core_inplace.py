@@ -51,6 +51,29 @@ class NoiseCoreInPlaceTest(unittest.TestCase):
             self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
             self.assertIn("ok", ran.stdout)
 
+    def test_session_in_place_seal_and_inbound(self) -> None:
+        cxx = shlex.split(os.environ.get("CXX", "c++"))
+        if not cxx or shutil.which(cxx[0]) is None:
+            raise unittest.SkipTest("C++ compiler not available")
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / "noise_session_inplace"
+            built = subprocess.run(
+                [*cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                 "-fno-exceptions", "-fno-rtti",
+                 "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
+                 "-DNOISE_BUILDING_TESTS",
+                 "-I", str(COMPONENT / "include"),
+                 str(ROOT / "tests" / "noise_session_inplace_harness.cpp"),
+                 *(str(COMPONENT / "src" / name) for name in (
+                     "ClientSession.cpp", "InitiatorHandshake.cpp", "ServiceCodec.cpp",
+                     "Status.cpp", "Transport.cpp", "TransportFrameCodec.cpp")),
+                 "-o", str(binary)],
+                capture_output=True, text=True)
+            self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+            ran = subprocess.run([str(binary)], capture_output=True, text=True)
+            self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+            self.assertIn("session in-place ok", ran.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
