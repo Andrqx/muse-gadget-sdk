@@ -43,6 +43,8 @@ MAX_JSON_BYTES = 128 * 1024
 MATRIX_VERSIONS = {"peripheral": 1, "sleep": 2}
 SWEEP_LABEL = "power-sweep"
 SWEEP_LABELS = (SWEEP_LABEL, "watcher-sweep")  # Legacy captures remain analyzable.
+# Mirrors MUSE_PTEST_MAX_RECORDS: no board matrix can plan more dry-run states.
+MAX_MATRIX_STATES = 54
 
 
 def matrix_echo(frame, expected):
@@ -420,6 +422,7 @@ def dryrun(args):
             "quantitative": False, "pm_exercised": False,
             "limitations": "USB-powered GPIO/I2C diagnostic only; no current, timing, PM-permission or deep-sleep validation. Audio constructor history may become warm.",
             "status_before": None, "status_after": None, "states": [], "done": None,
+            "planned": None, "planned_source": None,
             "raw_lines": [], "summary": {"ok": False, "errors": []}}
     errors = data["summary"]["errors"]
     raw_bytes = 0
@@ -467,6 +470,21 @@ def dryrun(args):
             raise ValueError("invalid dryrun ESP error code")
         return value
 
+    def planned(frame):
+        """Board-owned non-deep count; absent only on pre-`planned` firmware."""
+        if "planned" not in frame:
+            if data["planned_source"] == "firmware":
+                raise ValueError("dryrun frame omits planned after firmware reported it")
+            data["planned_source"] = "legacy_done_states"
+            return None
+        value = frame["planned"]
+        if type(value) is not int or not 1 <= value <= MAX_MATRIX_STATES:
+            raise ValueError(f"dryrun planned must be an integer between 1 and {MAX_MATRIX_STATES}")
+        if data["planned_source"] == "legacy_done_states" or data["planned"] not in (None, value):
+            raise ValueError("inconsistent dryrun planned state count")
+        data["planned"], data["planned_source"] = value, "firmware"
+        return value
+
     # Reserve and bank before opening a port or changing constructor history.
     with open(args.output, "x", encoding="utf-8") as stream:
         persist_metadata(stream, data)
@@ -494,8 +512,9 @@ def dryrun(args):
                         if kind == "dryrun_state":
                             data["states"].append(frame)
                             validate(frame)
+                            bound = planned(frame) or MAX_MATRIX_STATES
                             index = frame.get("index")
-                            if type(index) is not int or index != len(data["states"]) - 1 or not 0 <= index < 24:
+                            if type(index) is not int or index != len(data["states"]) - 1 or not 0 <= index < bound:
                                 raise ValueError("missing/duplicate/out-of-order dryrun state index")
                             identity = frame.get("id")
                             if not isinstance(identity, str) or not identity or len(identity) > 128 or any(s.get("id") == identity for s in data["states"][:-1]):
@@ -512,8 +531,14 @@ def dryrun(args):
                                 raise ValueError("dryrun summary state count mismatch")
                             if nonnegative_int(frame.get("errors"), "dryrun errors") or error_code(frame.get("restore_error")):
                                 errors.append("dryrun summary reports firmware/restore errors")
-                            if len(data["states"]) != 24:
-                                errors.append("dryrun did not cover all 24 non-deep sleep states")
+                            # Older firmware: the summary's own count is the only plan evidence.
+                            expected = planned(frame)
+                            if expected is None:
+                                expected = data["planned"] = frame["states"]
+                            if not 1 <= expected <= MAX_MATRIX_STATES:
+                                errors.append(f"dryrun state count {expected} outside 1..{MAX_MATRIX_STATES}")
+                            elif len(data["states"]) != expected:
+                                errors.append(f"dryrun covered {len(data['states'])} of {expected} planned non-deep sleep states")
                             break
                         else:
                             raise RuntimeError("unexpected/rejected dryrun reply: " + str(frame))
@@ -536,7 +561,7 @@ def dryrun(args):
             errors.append(str(exc))
         finally:
             data["summary"].update(ok=not errors and data["done"] is not None and data["status_after"] is not None,
-                                   states=len(data["states"]))
+                                   states=len(data["states"]), planned=data["planned"])
             persist_metadata(stream, data)
     if not data["summary"]["ok"]:
         raise RuntimeError(f"USB dryrun failed; diagnostics saved to {args.output}: " + "; ".join(errors))

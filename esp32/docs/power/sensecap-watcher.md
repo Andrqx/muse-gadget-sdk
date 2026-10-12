@@ -317,11 +317,15 @@ python3 tools/power/power_sweep.py dryrun --port "$DUT_PORT" \
 
 This sends strict `>ptest.dryrun={"matrix":"sleep"}`. Extra/duplicate keys,
 other matrices, active ARMED/RUNNING runs, and absent/unknown USB are rejected.
-It applies and reads back sleep indices 0–23, skips both deep states, and
-restores resting configuration. Each attempted state emits `dryrun_state`
-with identity, error/log, codec bytes/state and `knobs_applied`; exactly one
-`dryrun_done` reports `states,errors,restore_error,last_error_log` after accepted
-execution. `errors` counts failed state rows plus a failed restoration.
+It applies and reads back every non-deep sleep state (indices 0–23 on the
+Watcher), skips both deep states, and restores resting configuration. Each
+attempted state emits `dryrun_state` with identity, error/log, codec
+bytes/state and `knobs_applied`; exactly one `dryrun_done` reports
+`planned,states,errors,restore_error,last_error_log` after accepted execution.
+`planned` (also on every `dryrun_state`) is the number of non-deep entries in
+the board's sleep matrix; the host requires indices `0..planned-1` in order and
+`states == planned`, so another board's matrix size needs no host change.
+Firmware without `planned` falls back to the DONE frame's `states`. `errors` counts failed state rows plus a failed restoration.
 Apply errors still get readback; verified USB loss/unknown stops further
 states but does not skip restoration or the final frame.
 

@@ -598,6 +598,10 @@ static void dryrun(const char *json)
     muse_ptest_readback_t power = {0};
     esp_err_t e = fw_power(&power);
     if (e || !power.usb) { emit_error("dryrun_requires_verified_usb_vbus", e ? e : ESP_ERR_INVALID_STATE); return; }
+    unsigned planned = 0; /* board-owned non-deep count; lets hosts check coverage */
+    for (size_t i = 0; i < matrix_count(MATRIX_SLEEP); i++) {
+        planned += matrix_states(MATRIX_SLEEP)[i].load != MUSE_PTEST_DEEP_SLEEP;
+    }
     s_dryrun = true;
     fw_dryrun_mode(true);
     unsigned errors = 0, states = 0;
@@ -626,8 +630,8 @@ static void dryrun(const char *json)
         if (!e) { log_reset(); }
         if (e) { errors++; }
         states++;
-        emit("PTEST {\"schema\":1,\"type\":\"dryrun_state\",\"matrix\":\"sleep\",\"matrix_version\":2,\"boot_id\":%" PRIu32 ",\"usb\":%s,\"pm_exercised\":false,\"index\":%u,\"id\":\"%s\",\"error\":%d,\"last_error_log\":\"%s\",\"knobs_applied\":%u,\"codec_state\":\"%s\",",
-             s_boot_id, actual.usb ? "true" : "false", i, state->id, e, s_last_error_log, actual.knobs_applied,
+        emit("PTEST {\"schema\":1,\"type\":\"dryrun_state\",\"matrix\":\"sleep\",\"matrix_version\":2,\"boot_id\":%" PRIu32 ",\"usb\":%s,\"pm_exercised\":false,\"index\":%u,\"planned\":%u,\"id\":\"%s\",\"error\":%d,\"last_error_log\":\"%s\",\"knobs_applied\":%u,\"codec_state\":\"%s\",",
+             s_boot_id, actual.usb ? "true" : "false", i, planned, state->id, e, s_last_error_log, actual.knobs_applied,
              actual.codec_state == MUSE_PTEST_CODEC_COLD ? "cold" : actual.codec_state == MUSE_PTEST_CODEC_INITIALIZED ? "initialized" : actual.codec_state == MUSE_PTEST_CODEC_SUSPENDED ? "suspended" : "unknown");
         emit_codec_regs(&regs);
         emit("}\n");
@@ -649,8 +653,8 @@ static void dryrun(const char *json)
     if (restore) { errors++; }
     fw_dryrun_mode(false);
     s_dryrun = false;
-    emit("PTEST {\"schema\":1,\"type\":\"dryrun_done\",\"matrix\":\"sleep\",\"matrix_version\":2,\"boot_id\":%" PRIu32 ",\"usb\":%s,\"pm_exercised\":false,\"states\":%u,\"errors\":%u,\"restore_error\":%d,\"last_error_log\":\"%s\"}\n",
-         s_boot_id, restored.usb ? "true" : "false", states, errors, restore, s_last_error_log);
+    emit("PTEST {\"schema\":1,\"type\":\"dryrun_done\",\"matrix\":\"sleep\",\"matrix_version\":2,\"boot_id\":%" PRIu32 ",\"usb\":%s,\"pm_exercised\":false,\"planned\":%u,\"states\":%u,\"errors\":%u,\"restore_error\":%d,\"last_error_log\":\"%s\"}\n",
+         s_boot_id, restored.usb ? "true" : "false", planned, states, errors, restore, s_last_error_log);
     esp_err_t done_tx_error = fw_flush(); /* finish final line before returning to RX */
     if (done_tx_error) { emit_error("dryrun_done_tx_failed", done_tx_error); return; }
     /* No save_run, run mutation, timing counters or deep entry. Sticky warm

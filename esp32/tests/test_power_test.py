@@ -573,6 +573,8 @@ class PowerTest(unittest.TestCase):
         self.assertEqual([r["index"] for r in states], list(range(24)))
         self.assertEqual(len(done), 1)
         self.assertEqual((done[0]["states"], done[0]["errors"], done[0]["restore_error"]), (24, 0, 0))
+        # planned comes from the board-owned matrix (Watcher: 26 sleep minus 2 deep).
+        self.assertEqual({r["planned"] for r in states + done}, {24})
         self.assertTrue(all(r["usb"] and not r["pm_exercised"] for r in states))
         self.assertEqual(rows[0]["hash"], rows[-2]["hash"])
         self.assertGreaterEqual(rows[-3]["now_us"], rows[1]["now_us"]) # bounded I/O executes, no capture dwell
@@ -580,6 +582,20 @@ class PowerTest(unittest.TestCase):
         self.assertEqual(rows[-3]["state"], "idle")
         self.assertEqual(rows[-1]["deep_entries"], 0)
         self.assertEqual(rows[-1]["knobs"], 0)
+
+    def test_usb_dryrun_plans_other_board_matrix_size_and_skips_deep(self):
+        rows = self.run_commands("generic_board 3", '>ptest.dryrun={"matrix":"sleep"}')
+        states = [r for r in rows if r["type"] == "dryrun_state"]
+        done = rows[-1]
+        self.assertEqual([r["id"] for r in states], ["other_sleep_ref", "other_sleep_variant", "other_sleep_ref_b"])
+        self.assertEqual([r["index"] for r in states], [0, 1, 2])
+        self.assertEqual(done["type"], "dryrun_done")
+        self.assertEqual((done["planned"], done["states"], done["errors"]), (3, 3, 0))
+        self.assertTrue(all(r["planned"] == 3 for r in states))
+
+    def test_usb_dryrun_vbus_loss_reports_full_plan_with_short_states(self):
+        rows = self.run_commands("drop_usb 2", '>ptest.dryrun={"matrix":"sleep"}')
+        self.assertEqual((rows[-1]["planned"], rows[-1]["states"]), (24, 3))
 
     def test_usb_dryrun_strict_json_usb_and_active_gates(self):
         for payload in ['{}', '[]', '{"matrix":"peripheral"}', '{"matrix":"sleep","matrix":"sleep"}', '{"matrix":"sleep","extra":1}', '{"matrix":"sleep"} junk', '{"matrix":"sleep"', '{"matrix":1}', '{"matrix":"sl\\\\u0065ep"}']:

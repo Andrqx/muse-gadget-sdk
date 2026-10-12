@@ -177,7 +177,9 @@ board-neutral core and board hooks:
    describes for your board.
 8. **Rehearse on USB.** `power_sweep.py dryrun --port … --matrix sleep` applies
    and reads back every non-deep state with USB connected and reports
-   per-state errors. Fix everything it reports before using the PPK2. It
+   per-state errors. The expected state count comes from the firmware
+   (`planned`, the non-deep entries of your sleep matrix), never from the
+   Watcher's 24. Fix everything it reports before using the PPK2. It
    consumes cold state, so power-cycle afterwards.
 9. **Capture** as in the Watcher guide: start the PPK2 owner with USB connected,
    pass the coverage preflights, `arm`, remove USB, wait the reported bound,

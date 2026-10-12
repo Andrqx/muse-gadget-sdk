@@ -20,6 +20,13 @@ static const muse_ptest_state_t generic_matrix[] = {
     STATE("other_board_ref", "generic board reference", MUSE_PTEST_IDLE, 0, -1, false),
     STATE("other_board_rest", "generic board resting", MUSE_PTEST_IDLE, 0, -1, false),
 };
+/* generic_board 3: a non-Watcher sleep matrix size (3 non-deep + 1 deep). */
+static const muse_ptest_state_t generic_sleep_matrix[] = {
+    SLEEP_STATE("other_sleep_ref", "generic sleep reference", 0, MUSE_PTEST_CODEC_KEEP, "ref", "warm", 1000, MUSE_PTEST_IDLE),
+    SLEEP_STATE("other_sleep_variant", "generic sleep variant", MUSE_PTEST_CPU_PD, MUSE_PTEST_CODEC_KEEP, "variant", "warm", 1000, MUSE_PTEST_IDLE),
+    SLEEP_STATE("other_sleep_ref_b", "generic sleep closing reference", 0, MUSE_PTEST_CODEC_KEEP, "ref", "warm", 1000, MUSE_PTEST_IDLE),
+    SLEEP_STATE("other_sleep_deep", "generic timer deep sleep", MUSE_PTEST_GPIO_ISOLATE, MUSE_PTEST_CODEC_SUSPENDED, "other", "", 0, MUSE_PTEST_DEEP_SLEEP),
+};
 const char *muse_ptest_board_name(void)
 {
     return generic_board == 2 ? "Test \"quoted\" board\\name" : generic_board ? "Generic test board" : reference_board_name();
@@ -31,6 +38,10 @@ const muse_ptest_state_t *muse_ptest_board_matrix(const char *name, size_t *coun
     if (name && !strcmp(name, "peripheral")) {
         if (count) { *count = sizeof(generic_matrix) / sizeof(generic_matrix[0]); }
         return generic_matrix;
+    }
+    if (generic_board == 3 && name && !strcmp(name, "sleep")) {
+        if (count) { *count = sizeof(generic_sleep_matrix) / sizeof(generic_sleep_matrix[0]); }
+        return generic_sleep_matrix;
     }
     return NULL;
 }

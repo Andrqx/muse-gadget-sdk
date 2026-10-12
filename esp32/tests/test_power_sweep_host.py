@@ -14,6 +14,7 @@ import copy
 import importlib.util
 import io
 import json
+import re
 import subprocess
 from pathlib import Path
 import sys
@@ -1200,10 +1201,7 @@ class DryrunTests(unittest.TestCase):
         self.after = dict(self.before)
         common = {"schema": 1, "matrix": "sleep", "matrix_version": 2,
                   "boot_id": 7, "usb": True, "last_error_log": "", "pm_exercised": False}
-        self.states = [dict(common, type="dryrun_state", index=i, id="state_" + str(i), error=0,
-                            codec_regs={"dac": {"00": 0}, "adc": {"00": None}, "adc_variant": "unknown"},
-                            codec_regs_expected=False, knobs_applied={}, codec_state="cold") for i in range(24)]
-        self.done = dict(common, type="dryrun_done", states=24, errors=0, restore_error=0)
+        self.use_plan(24)
         self.lines = None
         self.commands = []
         self.pending = []
@@ -1246,6 +1244,20 @@ class DryrunTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def use_plan(self, count, *, planned=True):
+        common = {"schema": 1, "matrix": "sleep", "matrix_version": 2,
+                  "boot_id": 7, "usb": True, "last_error_log": "", "pm_exercised": False}
+        if planned:
+            common["planned"] = count
+        self.states = [dict(common, type="dryrun_state", index=i, id="state_" + str(i), error=0,
+                            codec_regs={"dac": {"00": 0}, "adc": {"00": None}, "adc_variant": "unknown"},
+                            codec_regs_expected=False, knobs_applied={}, codec_state="cold") for i in range(count)]
+        self.done = dict(common, type="dryrun_done", states=count, errors=0, restore_error=0)
+
+    def reset(self):
+        Path(self.output).unlink()
+        self.commands.clear()
+
     def line(self, frame):
         return "PTEST " + power.json.dumps(frame)
 
@@ -1275,6 +1287,61 @@ class DryrunTests(unittest.TestCase):
         self.assertTrue(self.commands[2].startswith("ptest.status="))
         self.assertNotEqual(self.commands[0], self.commands[2])
         self.assertTrue(self.closed)
+
+    def test_firmware_plan_sets_expected_count_for_any_board_matrix(self):
+        for count in (1, 3, 31, power.MAX_MATRIX_STATES):
+            with self.subTest(count=count):
+                self.use_plan(count)
+                bank = self.run_dryrun()
+                self.assertTrue(bank["summary"]["ok"])
+                self.assertEqual((bank["planned"], bank["planned_source"]), (count, "firmware"))
+                self.assertEqual((bank["summary"]["planned"], bank["summary"]["states"]), (count, count))
+                self.reset()
+
+    def test_plan_bound_mirrors_firmware_record_capacity(self):
+        header = (SOURCE.parents[2] / "components/muse/muse_power_test.h").read_text()
+        match = re.search(r"^#define MUSE_PTEST_MAX_RECORDS (\d+)$", header, re.M)
+        self.assertIsNotNone(match)
+        self.assertEqual(power.MAX_MATRIX_STATES, int(match.group(1)))
+
+    def test_legacy_firmware_without_plan_falls_back_to_done_states(self):
+        for count in (24, 5):
+            with self.subTest(count=count):
+                self.use_plan(count, planned=False)
+                bank = self.run_dryrun()
+                self.assertTrue(bank["summary"]["ok"])
+                self.assertEqual((bank["planned"], bank["planned_source"]), (count, "legacy_done_states"))
+                self.reset()
+        self.use_plan(0, planned=False)
+        self.assertFalse(self.run_dryrun(fails=True)["summary"]["ok"])
+
+    def test_short_coverage_against_firmware_plan_fails_with_banked_prefix(self):
+        self.use_plan(7)
+        self.lines = [self.line(s) for s in self.states[:4]] + [self.line(dict(self.done, states=4))]
+        bank = self.run_dryrun(fails=True)
+        self.assertEqual(len(bank["states"]), 4)
+        self.assertIn("covered 4 of 7 planned", " ".join(bank["summary"]["errors"]))
+
+    def test_invalid_or_inconsistent_plan_fails_closed(self):
+        self.use_plan(3)
+        state_cases = [
+            [dict(self.states[0], planned=0)], [dict(self.states[0], planned=power.MAX_MATRIX_STATES + 1)],
+            [dict(self.states[0], planned=True)], [dict(self.states[0], planned=3.0)],
+            [self.states[0], dict(self.states[1], planned=4)],              # plan changed mid-run
+            [self.states[0], {k: v for k, v in self.states[1].items() if k != "planned"}],  # dropped
+            [{k: v for k, v in self.states[0].items() if k != "planned"}, self.states[1]],  # appeared
+            [dict(self.states[0], planned=1), dict(self.states[1], planned=1)],  # index beyond plan
+        ]
+        for states in state_cases:
+            with self.subTest(states=states):
+                self.lines = [self.line(s) for s in states] + [self.line(dict(self.done, states=len(states)))]
+                self.assertFalse(self.run_dryrun(fails=True)["summary"]["ok"])
+                self.reset()
+        for change in ({"planned": 4}, {"planned": 0}):
+            with self.subTest(done=change):
+                self.lines = [self.line(s) for s in self.states] + [self.line(dict(self.done, **change))]
+                self.assertFalse(self.run_dryrun(fails=True)["summary"]["ok"])
+                self.reset()
 
     def test_missing_usb_or_active_run_never_sends_dryrun(self):
         for change in ({"usb": False}, {"usb": 1}, {"power_error": -1}, {"state": "armed"}, {"state": "running"}, {"boot_id": True}):
@@ -1433,6 +1500,17 @@ class DryrunTests(unittest.TestCase):
 class FirmwareProtocolIntegrationTests(unittest.TestCase):
     """Real C fake emitter -> strict host provenance/diagnostics -> analysis."""
     def test_emitted_dryrun_protocol_is_consumable_without_hardware(self):
+        bank, state_frames = self.emitted_dryrun()
+        self.assertEqual(len(state_frames), 24)
+        self.assertEqual((bank["planned"], bank["planned_source"]), (24, "firmware"))
+
+    def test_emitted_dryrun_for_other_board_matrix_size_needs_no_host_change(self):
+        bank, state_frames = self.emitted_dryrun(setup=["generic_board 3"])
+        self.assertEqual([frame["id"] for frame in state_frames],
+                         ["other_sleep_ref", "other_sleep_variant", "other_sleep_ref_b"])
+        self.assertEqual((bank["planned"], bank["summary"]["states"]), (3, 3))
+
+    def emitted_dryrun(self, setup=()):
         import subprocess
         root = SOURCE.parents[2]
         nonces = ["ab" * 8, "cd" * 8]
@@ -1446,13 +1524,14 @@ class FirmwareProtocolIntegrationTests(unittest.TestCase):
                              "-I", str(root / "components/muse"), "-I", directory,
                             str(root / "tests/power_test_harness.c"), "-o", str(binary)],
                            check=True, capture_output=True, text=True, timeout=30)
-            process = subprocess.run([str(binary)], input="\n".join(">" + command for command in commands) + "\n",
+            script = list(setup) + [">" + command for command in commands]
+            process = subprocess.run([str(binary)], input="\n".join(script) + "\n",
                                      capture_output=True, text=True, check=True, timeout=10)
             lines = process.stdout.splitlines()
             emitted = [power.strict_json_object(line[6:]) for line in lines]
             state_frames = [frame for frame in emitted if frame["type"] == "dryrun_state"]
             done = next(frame for frame in emitted if frame["type"] == "dryrun_done")
-            self.assertEqual(len(state_frames), 24)
+            self.assertEqual(done["states"], len(state_frames))
             self.assertEqual(done["errors"], 0)
             self.assertEqual(done["restore_error"], 0)
             cursor = iter(lines)
@@ -1489,6 +1568,7 @@ class FirmwareProtocolIntegrationTests(unittest.TestCase):
         self.assertTrue(bank["summary"]["ok"])
         self.assertFalse(bank["quantitative"])
         self.assertTrue(all("codec_regs" in frame and "last_error_log" in frame for frame in state_frames))
+        return bank, state_frames
 
     def test_emitted_sleep_protocol_and_plan_are_consumable_end_to_end(self):
         import subprocess
