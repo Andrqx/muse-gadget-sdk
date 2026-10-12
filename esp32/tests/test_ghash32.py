@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -67,6 +68,18 @@ class Ghash32Test(unittest.TestCase):
 
     def test_fast_gcm_self_test_failure_turns_it_off(self) -> None:
         self.assertIn("fast_gcm self-test failure ok", self._fast_gcm_harness("TEST_SELFTEST_FAIL"))
+
+    def test_bench_builds_without_fast_gcm(self) -> None:
+        # Every fast_gcm call the bench makes has a stub for
+        # CONFIG_HOMEHUB_FAST_GCM=n, so the bench builds either way.
+        header = (ROOT / "main" / "fast_gcm.h").read_text()
+        stubs = header[header.index("#else"):]
+        bench = (ROOT / "main" / "pipeline_bench.cpp").read_text()
+        for name in sorted(set(re.findall(r"\b(fast_gcm_[a-z_]+)\(", bench))):
+            self.assertIn(f"static inline", stubs)
+            self.assertRegex(stubs, rf"static inline [a-z_ ]+\b{name}\(", name)
+        self.assertIn("FAST_GCM_DEFAULT_MODE", stubs)
+        self.assertNotIn("CONFIG_HOMEHUB_FAST_GCM_DEFAULT_MODE", bench)
 
     def test_fast_gcm_wraps_idf_entry_points(self) -> None:
         cmake = (ROOT / "main" / "CMakeLists.txt").read_text()

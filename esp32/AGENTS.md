@@ -445,6 +445,8 @@ The device still needs to be paired once for its token.
   setup is complete, which doubles Wi-Fi throughput with BLE up. It relies
   on ESP-IDF's private coexistence status bits, so it builds on IDF v6.0.x
   only until the bits are rechecked on another version.
+  `tools/coexist/` holds the overlays used to size it, and the data-path
+  bench (`CONFIG_HOMEHUB_PIPELINE_BENCH`) with its results.
 - On the C5 with PSRAM, `CONFIG_HOMEHUB_FAST_GCM` (default on there) wraps
   ESP-IDF's one-shot AES-GCM with `main/fast_gcm.c` for TLS and Noise. It
   takes about 19 KB of internal RAM (8-bit GHASH tables and the PSRAM staging

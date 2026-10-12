@@ -173,6 +173,8 @@ class LinkNoiseTunnelTest(unittest.TestCase):
                 (dict(c5, lwip_psram=False), False),
                 (dict(c5, psram=False), False),
                 (dict(c5, snd=131072), False),
+                # The data-path bench (never shipped) may try anything.
+                (dict(base, snd=131072, wnd=131072, bench=True), True),
             ]
             on = lambda v: "ON" if v else "OFF"
             for cfg, accepted in cases:
@@ -186,7 +188,8 @@ class LinkNoiseTunnelTest(unittest.TestCase):
                         f"set(CONFIG_IDF_TARGET_ESP32C5 {on(cfg['c5'])})\n"
                         f"set(CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP {on(cfg['lwip_psram'])})\n"
                         f"set(CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM {cfg['dyn_rx']})\n"
-                        f"set(CONFIG_LWIP_TCP_OOSEQ_MAX_PBUFS {cfg['ooseq']})\n" + guard
+                        f"set(CONFIG_LWIP_TCP_OOSEQ_MAX_PBUFS {cfg['ooseq']})\n"
+                        f"set(CONFIG_HOMEHUB_PIPELINE_BENCH {on(cfg.get('bench'))})\n" + guard
                     )
                     ran = subprocess.run(
                         ["cmake", "-P", str(script)],

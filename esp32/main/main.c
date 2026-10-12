@@ -40,6 +40,13 @@ void app_main(void) {
         ESP_LOGE("link.main", "PSRAM did not start: network buffers fall back to internal RAM");
     }
 #endif
+#if CONFIG_HOMEHUB_PIPELINE_BENCH
+    // Bench builds measure the data path and BLE coexistence instead of
+    // running the gadget.
+    extern void pipeline_bench_main(void);
+    pipeline_bench_main();
+    return;
+#endif
 #if CONFIG_MUSE_ENABLED
     muse_glue_start();
 #endif

@@ -27,6 +27,8 @@
 
 #include <stdbool.h>
 
+#include "sdkconfig.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -36,6 +38,9 @@ typedef enum {
     FAST_GCM_G4 = 1,    // 4-bit tables, 256 B per key
     FAST_GCM_G8 = 2,    // 8-bit tables, 4 KB per key (internal RAM)
 } fast_gcm_mode_t;
+
+#if CONFIG_HOMEHUB_FAST_GCM
+#define FAST_GCM_DEFAULT_MODE ((fast_gcm_mode_t)CONFIG_HOMEHUB_FAST_GCM_DEFAULT_MODE)
 
 // Switch implementation at run time (bench A/B). Not thread-safe against
 // operations in flight: call while no GCM operation runs.
@@ -58,6 +63,19 @@ void fast_gcm_counts(unsigned *fast, unsigned *fallback);
 // staged path). Runs once, by itself on the first GCM operation; a failure
 // turns the fast path off. Returns whether it passed.
 bool fast_gcm_self_test(void);
+
+#else
+// Off: IDF's GCM always. The bench still builds and A/Bs IDF against itself.
+#define FAST_GCM_DEFAULT_MODE FAST_GCM_OFF
+static inline void fast_gcm_set_mode(fast_gcm_mode_t mode) { (void)mode; }
+static inline fast_gcm_mode_t fast_gcm_get_mode(void) { return FAST_GCM_OFF; }
+static inline void fast_gcm_set_table_psram(bool psram) { (void)psram; }
+static inline void fast_gcm_forget_all(void) {}
+static inline void fast_gcm_counts(unsigned *fast, unsigned *fallback) {
+    if (fast) *fast = 0;
+    if (fallback) *fallback = 0;
+}
+#endif
 
 #ifdef __cplusplus
 }

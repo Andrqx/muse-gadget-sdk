@@ -19,6 +19,7 @@ set(GADGET_SRCS
     "ble_basic.c"
     "ble_central.c"
     "ble_coex.c"
+    "pipeline_bench.cpp"
     "ghash32.c"
     "fast_gcm.c"
     "wifi_mgr.c"

@@ -368,6 +368,14 @@ static bool ws_send_frame_inplace(esp_tls_t *tls, uint8_t *payload, size_t len) 
     return write_all(tls, frame, total) == static_cast<ssize_t>(total);
 }
 
+#if CONFIG_HOMEHUB_PIPELINE_BENCH
+// Bench builds drive the production frame sender over their own TLS link.
+extern "C" bool noise_bench_ws_send_inplace(esp_tls_t *tls, uint8_t *payload, size_t len) {
+    s_running = true;
+    return ws_send_frame_inplace(tls, payload, len);
+}
+#endif
+
 // Send a zero-length masked WebSocket ping (opcode 0x9). The peer (the LB /
 // ingress-rev-proxy) replies with a pong, so this generates traffic in BOTH
 // directions — unlike the Noise empty-BodyChunk keepalive, which the daemon

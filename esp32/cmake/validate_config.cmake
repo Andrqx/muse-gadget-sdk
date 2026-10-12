@@ -29,8 +29,11 @@ endif()
 # setup that was measured: PSRAM with lwIP and Wi-Fi buffers preferring it, a
 # receive path that takes a whole window (at least 64 dynamic RX buffers) and
 # a bounded out-of-order queue (1 to 12 segments; 0 means unlimited).
+# The data-path bench (CONFIG_HOMEHUB_PIPELINE_BENCH, never shipped) may try
+# any window.
 if((NOT CONFIG_LWIP_TCP_SND_BUF_DEFAULT EQUAL 16384 OR
     NOT CONFIG_LWIP_TCP_WND_DEFAULT EQUAL 16384) AND
+   NOT CONFIG_HOMEHUB_PIPELINE_BENCH AND
    NOT (CONFIG_IDF_TARGET_ESP32C5 AND CONFIG_SPIRAM AND CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP AND
         CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM GREATER_EQUAL 64 AND
         CONFIG_LWIP_TCP_OOSEQ_MAX_PBUFS GREATER 0 AND
@@ -54,6 +57,15 @@ endif()
 if(CONFIG_HOMEHUB_BLE_PERSISTENT AND CONFIG_BT_NIMBLE_MAX_CONNECTIONS LESS 2)
     message(FATAL_ERROR
         "CONFIG_HOMEHUB_BLE_PERSISTENT needs CONFIG_BT_NIMBLE_MAX_CONNECTIONS of at least 2, so a device holding the advertised service can't take the only BLE connection (tools/coexist/sdkconfig.ble-persist sets it). ${GADGET_CONFIG_REGEN_HINT}")
+endif()
+
+# Skipping TLS server verification is only for the data-path bench, whose
+# LAN host has a throwaway self-signed certificate (tools/coexist/sdkconfig.bench).
+# Anywhere else it would let anyone on the path impersonate the VM.
+if((CONFIG_ESP_TLS_INSECURE OR CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY) AND
+   NOT CONFIG_HOMEHUB_PIPELINE_BENCH)
+    message(FATAL_ERROR
+        "CONFIG_ESP_TLS_INSECURE / CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY are only allowed in the data-path bench (CONFIG_HOMEHUB_PIPELINE_BENCH). ${GADGET_CONFIG_REGEN_HINT}")
 endif()
 
 # A token from gadgets.muse.ai is mgst_ plus 43 canonical base64url characters.
