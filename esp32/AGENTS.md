@@ -429,6 +429,11 @@ The device still needs to be paired once for its token.
 - OTA is off by default (`CONFIG_HOMEHUB_OTA_ENABLED=n`, version `999.0.0`),
   except on boards with the full UI. Set a version with `-DPROJECT_VER=1.0.0` or
   `version.txt`.
+- On the C5 with PSRAM, `CONFIG_HOMEHUB_FAST_GCM` (default on there) wraps
+  ESP-IDF's one-shot AES-GCM with `main/fast_gcm.c` for TLS and Noise. It
+  takes about 19 KB of internal RAM (8-bit GHASH tables and the PSRAM staging
+  buffer; see its Kconfig help). Turn it off to compare against IDF's;
+  `tests/test_ghash32.py` checks the tables and its failure handling.
 - Don't move offsets in `partitions.csv`. `prod_data` and `prod_bak` are fixed
   manufacturing locations, and the table offset of `0x10000` leaves room for a
   larger Secure Boot bootloader. Check the `check_sizes` line in the build

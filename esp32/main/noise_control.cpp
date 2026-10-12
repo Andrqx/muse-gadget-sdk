@@ -19,6 +19,9 @@
 #include "noise_upgrade.h"
 #include "noise_tunnel_internal.h"
 #include "ws_mask.h"
+#if CONFIG_HOMEHUB_FAST_GCM
+#include "fast_gcm.h"
+#endif
 
 #include <cstring>
 #include <cstdlib>
@@ -1945,6 +1948,9 @@ static session_result_t run_session(stack_monitor_t *stack) {
     noise_upgrade_result_t upgrade = ws_upgrade(tls);
     if (upgrade != NOISE_UPGRADE_OK) {
         esp_tls_conn_destroy(tls);
+#if CONFIG_HOMEHUB_FAST_GCM
+        fast_gcm_forget_all();
+#endif
         // The edge refusing our bearer is an auth failure, not a network
         // blip. Saying so takes the 60s auth backoff instead of the 15s
         // network cap, and raises ws_auth_failed so app.c re-fetches the
@@ -2355,6 +2361,9 @@ cleanup:
     free(tf_scratch);
     free(sr_scratch);
     esp_tls_conn_destroy(tls);
+#if CONFIG_HOMEHUB_FAST_GCM
+    fast_gcm_forget_all();   // this session's TLS and Noise keys
+#endif
     return result;
 }
 

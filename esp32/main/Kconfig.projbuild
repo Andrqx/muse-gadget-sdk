@@ -122,6 +122,56 @@ menu "ESP32 Device SDK"
             the classic ESP32) should disable this. The control API to the VM
             keeps working; the status turns green once the control session is up.
 
+    config HOMEHUB_FAST_GCM
+        bool "Faster AES-GCM GHASH (chips without a GCM engine)"
+        depends on MBEDTLS_HARDWARE_AES && !MBEDTLS_HARDWARE_GCM
+        default y if IDF_TARGET_ESP32C5 && SPIRAM
+        default n
+        help
+            Wrap ESP-IDF's one-shot AES-GCM (used by TLS records and Noise
+            transport messages through PSA) with main/fast_gcm.c: CTR on the
+            AES DMA engine as before, GHASH with 32-bit tables cached per key
+            instead of IDF's 64-bit 4-bit tables rebuilt on every call, and
+            PSRAM data staged through internal RAM for the AES DMA.
+
+            Measured on the C5 DevKitC-1: AES-256-GCM seal of an 8 KB frame
+            in PSRAM 3.5 ms -> 2.0 ms. Checked against IDF's GCM by
+            tests/test_ghash32.py and the bench's gcm_verify.
+
+            Internal RAM: up to CONFIG_HOMEHUB_FAST_GCM_G8_TABLES 8-bit tables
+            of 4 KB, allocated on first use, plus the static staging buffer
+            (CONFIG_HOMEHUB_FAST_GCM_BOUNCE_BYTES) and ~1.3 KB of per-key
+            state: about 19 KB with the defaults.
+
+    config HOMEHUB_FAST_GCM_DEFAULT_MODE
+        int "Fast GCM mode at boot (0 off, 1 4-bit tables, 2 8-bit tables)"
+        depends on HOMEHUB_FAST_GCM
+        range 0 2
+        default 2
+        help
+            8-bit tables take 4 KB of internal RAM per cached key (up to four
+            keys, allocated on first use) and halve GHASH's work again.
+
+    config HOMEHUB_FAST_GCM_G8_TABLES
+        int "8-bit GHASH tables to keep (4 KB internal RAM each)"
+        depends on HOMEHUB_FAST_GCM
+        range 0 4
+        default 4 if SPIRAM
+        default 0
+        help
+            One per AES key in use: the VM session's TLS link and its Noise
+            transport use two each. Keys beyond this use 4-bit tables.
+
+    config HOMEHUB_FAST_GCM_BOUNCE_BYTES
+        int "Internal staging buffer for PSRAM data (bytes)"
+        depends on HOMEHUB_FAST_GCM
+        range 256 16384
+        default 2048
+        help
+            Static internal RAM that PSRAM plaintext and ciphertext pass
+            through on their way to the AES engine. Must be a multiple of 16
+            (whole AES blocks); the build checks.
+
     config HOMEHUB_DEV_BUILD
         bool "Dev build (dev signing key + dev-only affordances)"
         default y
