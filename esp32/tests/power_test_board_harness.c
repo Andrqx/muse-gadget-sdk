@@ -158,7 +158,7 @@ static unsigned adc_addr = 0x14;
 static unsigned codec_writes[2], codec_bad_reg = 0x100;
 static bool dac_late_error; /* a second, different write error later in the sequence */
 static char log_buf[2048];
-static void logf(const char *text)
+static void log_event(const char *text)
 {
     size_t n = strlen(log_buf);
     snprintf(log_buf + n, sizeof(log_buf) - n, "%s%s", n ? "," : "", text);
@@ -173,7 +173,7 @@ static esp_err_t i2c_master_transmit(i2c_master_dev_handle_t dev, const uint8_t 
         exp_regs[buf[0]] = buf[1] | buf[2] << 8;
         char text[32];
         snprintf(text, sizeof(text), "exp%02x=%04x", buf[0], exp_regs[buf[0]]);
-        logf(text);
+        log_event(text);
         return ESP_OK;
     }
     assert(n == 2);
@@ -248,7 +248,7 @@ static esp_err_t i2s_channel_write(i2s_chan_handle_t h, const void *buf, size_t 
     *done = n - i2s_short;
     return ESP_OK;
 }
-static void vTaskDelay(int ticks) { char text[24]; snprintf(text, sizeof(text), "delay%d", ticks); logf(text); }
+static void vTaskDelay(int ticks) { char text[24]; snprintf(text, sizeof(text), "delay%d", ticks); log_event(text); }
 
 /* State the BSP defines before its power-test section. */
 static i2c_master_bus_handle_t s_i2c = (void *)1;
@@ -266,21 +266,26 @@ static esp_err_t ptest_audio_initialize(void);
 static esp_err_t ptest_audio_open(void);
 static esp_err_t ptest_audio_close(void);
 
+/* The extract carries the board's power-test statics whole; the panel, ADC
+ * and audio bring-up that use some of them are left out. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
 #include "power_test_board_functions.inc"
+#pragma GCC diagnostic pop
 
-static esp_err_t ptest_lcd(int percent) { char t[16]; snprintf(t, sizeof(t), "lcd%d", percent); logf(t); return fault("lcd"); }
-static esp_err_t ptest_lcd_off(void) { logf("lcd_off"); return fault("lcd"); }
-static esp_err_t ptest_adc_init(void) { logf("adc_init"); return fault("adc_init"); }
+static esp_err_t ptest_lcd(int percent) { char t[16]; snprintf(t, sizeof(t), "lcd%d", percent); log_event(t); return fault("lcd"); }
+static esp_err_t ptest_lcd_off(void) { log_event("lcd_off"); return fault("lcd"); }
+static esp_err_t ptest_adc_init(void) { log_event("adc_init"); return fault("adc_init"); }
 static esp_err_t ptest_audio_initialize(void)
 {
-    logf("audio_init");
+    log_event("audio_init");
     s_ptest_audio_attempted = true;
     if (s_ptest_codec_state == MUSE_PTEST_CODEC_COLD) { s_ptest_codec_state = MUSE_PTEST_CODEC_INITIALIZED; }
     return fault("audio");
 }
 static esp_err_t ptest_audio_open(void)
 {
-    logf("audio_open");
+    log_event("audio_open");
     s_ptest_audio_attempted = true;
     s_ptest_spk_open = s_ptest_mic_open = true;
     if (s_ptest_codec_state == MUSE_PTEST_CODEC_COLD) { s_ptest_codec_state = MUSE_PTEST_CODEC_INITIALIZED; }
@@ -288,7 +293,7 @@ static esp_err_t ptest_audio_open(void)
 }
 static esp_err_t ptest_audio_close(void)
 {
-    logf("audio_close");
+    log_event("audio_close");
     if (s_ptest_spk_open) { s_ptest_codec_state = MUSE_PTEST_CODEC_SUSPENDED; }
     s_ptest_spk_open = s_ptest_mic_open = false;
     return fault("audio");
@@ -338,7 +343,7 @@ static bool restored(const gpio_num_t *list, size_t n)
         if (now.pu != was.pu || now.pd != was.pd || now.ie != was.ie || now.oe != was.oe || now.od != was.od ||
             now.drv != was.drv || now.fun_sel != was.fun_sel || now.slp_sel != was.slp_sel ||
             GPIO.func_out_sel_cfg[p].val != boot_matrix[p] ||
-            latch(p) != (p < 32 ? (boot_out >> p) & 1 : (boot_out1 >> (p - 32)) & 1)) {
+            latch(p) != (int)(p < 32 ? (boot_out >> p) & 1 : (boot_out1 >> (p - 32)) & 1)) {
             fprintf(stderr, "pin %d not restored\n", p);
             return false;
         }
