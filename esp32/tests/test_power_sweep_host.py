@@ -586,6 +586,69 @@ class LifecycleTests(unittest.TestCase):
                     power.arm(self.args)
                 self.assertEqual([x.args[1]["op"] for x in commands.call_args_list], ["status"])
 
+    def test_arm_refuses_unready_faulted_busy_or_clockless_owner(self):
+        for change in ({"holding": False}, {"fault": "queue_overflow"}, {"active_label": "power-sweep"},
+                       {"host_monotonic_origin_s": None}, {"host_monotonic_origin_s": float("nan")}):
+            with self.subTest(change=change):
+                Path(self.output).unlink(missing_ok=True)
+                owner = dict(self.owner, **change)
+                with patch.dict(sys.modules, {"chat": self.chat}), \
+                     patch.object(power, "send_command", return_value=owner) as commands, \
+                     patch.object(power, "request") as request:
+                    with self.assertRaises(ValueError):
+                        power.arm(self.args)
+                    self.assertEqual([x.args[1]["op"] for x in commands.call_args_list], ["status"])
+                    request.assert_not_called()  # the board is never armed
+
+    def test_arm_rejects_bad_matrix_or_sleep_repeats_before_touching_owner(self):
+        for matrix, repeats in (("everything", 1), ("sleep", 2), ("sleep", True)):
+            with self.subTest(matrix=matrix, repeats=repeats):
+                Path(self.output).unlink(missing_ok=True)
+                self.args.matrix, self.args.repeats = matrix, repeats
+                with patch.dict(sys.modules, {"chat": self.chat}), \
+                     patch.object(power, "send_command") as commands:
+                    with self.assertRaises(ValueError):
+                        power.arm(self.args)
+                    commands.assert_not_called()
+
+    def test_arm_requires_a_bounded_firmware_duration(self):
+        for bound in (None, 0, 3_600_001, 815000.0):
+            with self.subTest(bound=bound):
+                Path(self.output).unlink(missing_ok=True)
+                ack = dict(self.ack, max_duration_ms=bound)
+                with self.assertRaisesRegex(ValueError, "bounded sweep duration"):
+                    self.run_arm(ack)
+                # Never reported ready to unplug; the owner keeps recording.
+                self.assertEqual(power.load_json(self.output)["state"], "arm_outcome_unknown")
+
+    def test_collect_gates_never_end_or_finish_the_owner(self):
+        acquisition = {"ppk_before_arm": self.owner, "arm": self.ack}
+        path = str(Path(self.tmp.name) / "acquisition.json")
+        power.save_json(path, acquisition)
+        self.args.acquisition = path
+        good = {"run_id": "test-run", "run_boot_id": 7, "retrieval_boot_id": 7, "state": "complete"}
+        cases = [
+            ("owner lost", dict(self.owner, holding=False), [{"usb": True, "boot_id": 7}, good], "owner was lost"),
+            ("no USB", self.owner, [{"usb": False, "boot_id": 7}, good], "USB reconnection"),
+            ("other run", self.owner, [{"usb": True, "boot_id": 7}, dict(good, run_id="other")], "this acquisition"),
+            ("still running", self.owner, [{"usb": True, "boot_id": 7}, dict(good, state="running")], "not finished"),
+        ]
+        for name, owner, replies, message in cases:
+            with self.subTest(name):
+                Path(self.output).unlink(missing_ok=True)
+                with patch.dict(sys.modules, {"chat": self.chat}), \
+                     patch.object(power, "send_command", return_value=owner) as commands, \
+                     patch.object(power, "request", side_effect=replies):
+                    with self.assertRaisesRegex(ValueError, message):
+                        power.collect(self.args)
+                    self.assertEqual({x.args[1]["op"] for x in commands.call_args_list}, {"status"})
+                self.assertFalse(Path(self.output).exists())
+        Path(self.output).write_text("{}")
+        with patch.object(power, "send_command") as commands:
+            with self.assertRaises(FileExistsError):
+                power.collect(self.args)
+            commands.assert_not_called()
+
     def test_wrong_run_or_usb_ack_never_ready_and_owner_retained(self):
         for change in ({"run_id": "other"}, {"usb": False}, {"boot_id": 8}):
             with self.assertRaises(ValueError):
@@ -949,6 +1012,24 @@ class ComparisonTests(unittest.TestCase):
         self.profile["plan"][0]["ref_group"] = "cold"
         with self.assertRaisesRegex(ValueError, "crosses reference groups"):
             power.compare_profile(self.profile, [spec])
+
+    def test_malformed_explicit_pairs_rejected(self):
+        spec = {"variant": "uart_hiz", "ref_before": "warm_ref_0", "ref_after": "warm_ref_1"}
+        for pairs in ("uart_hiz", {"pairs": None}, [spec] * 129):
+            with self.subTest(pairs=str(pairs)[:40]), self.assertRaisesRegex(ValueError, "pairs must be"):
+                power.compare_profile(self.profile, pairs)
+        for bad in ("pair", dict(spec, extra=1), dict(spec, variant=""), dict(spec, ref_after=None),
+                    dict(spec, ref_after="warm_ref_0"), dict(spec, repeat=-1), dict(spec, repeat=True)):
+            with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, "invalid explicit"):
+                power.compare_profile(self.profile, [bad])
+        for missing in (dict(spec, variant="absent"), dict(spec, repeat=5)):
+            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, "variant does not exist"):
+                power.compare_profile(self.profile, [missing])
+
+    def test_explicit_pair_cannot_use_non_reference_state_as_a_reference(self):
+        self.profile["plan"][0]["role"] = "variant"
+        with self.assertRaisesRegex(ValueError, "non-reference"):
+            power.compare_profile(self.profile, [{"variant": "uart_hiz", "ref_before": "warm_ref_0", "ref_after": "warm_ref_1"}])
 
     def test_accepted_mean_count_and_duplicate_identity_must_be_valid(self):
         for key, value in (("sample_count", 0), ("sample_count", True),

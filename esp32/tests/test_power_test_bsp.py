@@ -95,6 +95,15 @@ class WatcherPowerBspTest(unittest.TestCase):
     def test_repeated_resting_close_does_not_disable_stopped_i2s(self):
         self.assertEqual(self.scenario(11)["operation"], 0)
 
+    def test_failed_i2s_stop_poisons_and_forces_shutdown(self):
+        self.assertEqual(self.scenario(13)["force_calls"], 1)
+
+    def test_suspended_snapshot_transport_error_wins_and_forces_shutdown(self):
+        self.assertEqual(self.scenario(14)["cleanup"], 263)
+
+    def test_initialized_constructor_bytes_are_expected_evidence(self):
+        self.assertEqual(self.scenario(15)["operation"], 0)
+
     def test_chip_value_mismatch_is_evidence_not_failure(self):
         self.assertEqual(self.scenario(9)["operation"], 0)
 

@@ -54,7 +54,8 @@ static int no_sleep_index = -1, readback_usb_index = -1, readback_usb_nth;
 static unsigned state_readbacks, codec_history = MUSE_PTEST_CODEC_COLD;
 static unsigned wake_cause, deep_entries, holds_released, uart_restores, knob_reverts;
 static uint16_t applied_knobs;
-static bool uart_parked, codec_mismatch, reset_on_cleanup, pending_tx;
+static bool uart_parked, codec_mismatch, reset_on_cleanup, pending_tx, codec_unique;
+static uint8_t unique_snapshots;
 static unsigned flush_calls;
 static int flush_error;
 static unsigned fail_flush_nth;
@@ -84,6 +85,7 @@ static void fw_codec_regs(muse_ptest_codec_regs_t *out)
     }
     out->expected = codec_history >= MUSE_PTEST_CODEC_INITIALIZED && !codec_mismatch;
     if (codec_mismatch) { out->dac[3] = 0x99; }
+    if (codec_unique) { out->dac[0] = ++unique_snapshots; } /* every snapshot distinct */
 }
 static uint32_t power_reads, frames, adc_samples, scans;
 static int64_t slept_us;
@@ -278,6 +280,7 @@ int main(void)
             printf("PTEST {\"type\":\"matrix_unknown\",\"count\":%zu,\"supported\":%s}\n", count, states ? "true" : "false");
         }
         else if (sscanf(line, "codec_mismatch %u", &value) == 1) { codec_mismatch = value != 0; }
+        else if (sscanf(line, "codec_unique %u", &value) == 1) { codec_unique = value != 0; }
         else if (sscanf(line, "flush_nth %u", &value) == 1) { fail_flush_nth = value; }
         else if (sscanf(line, "flush_error %d", &error) == 1) { flush_error = error; }
         else if (sscanf(line, "noise %u", &value) == 1) { noise_log = value != 0; }

@@ -605,6 +605,70 @@ class CLIGILTest(unittest.TestCase):
             code = cli.main(argv, isolated=isolated)
         return observed[0], code
 
+    def run_loop(self, events, stdin_lines=(), control_errors=0):
+        """Drive the owner's event loop with scripted selector events."""
+        session = mock.Mock(started=True, closed=False, cleanup_errors=[], fault=None)
+        session.status.return_value = {"transport_ready": True, "holding": True, "fault": None,
+                                       "cleanup_errors": [], "total_valid_samples": 1,
+                                       "first_finite_sample_host_offset_s": 0,
+                                       "last_data_host_offset_s": 0, "receiver": {}}
+        stdin = mock.Mock()
+        stdin.isatty.return_value = True
+        stdin.readline.side_effect = list(stdin_lines)
+        script = iter(events)
+        exhausted = []
+        def select():
+            data = next(script, None)
+            if data is None:  # script exhausted: stop the loop and fail below
+                session.closed = True
+                exhausted.append(True)
+                return []
+            return [(mock.Mock(data=data), 1)]
+        selector = mock.Mock()
+        selector.select.side_effect = select
+        server = mock.Mock(fd=123)
+        services = []
+        def service(_):
+            services.append(1)
+            if len(services) <= control_errors:
+                raise RuntimeError("bad control frame")
+            session.closed = True
+        server.service.side_effect = service
+        self.notices = []
+        argv = ["hold", "--port", "fake", "--voltage-mv", "3872", "--output", "fake.jsonl",
+                "--ack-source-wiring", "--ack-battery-isolated", "--ack-no-charging-backfeed",
+                "--ack-usb-connected-before-start"]
+        with mock.patch.object(cli, "PPK2Session", return_value=session), \
+             mock.patch.object(cli, "ControlServer", return_value=server), mock.patch.object(cli, "JSONLWriter"), \
+             mock.patch.object(cli.selectors, "DefaultSelector", return_value=selector), \
+             mock.patch.object(cli.sys, "stdin", stdin), \
+             mock.patch.object(cli, "_print", side_effect=lambda value, **kwargs: self.notices.append(value)):
+            code = cli.main(argv)
+        self.assertEqual(exhausted, [], "event loop outlived its script")
+        return session, selector, code
+
+    def test_interactive_stdin_commands_never_close_the_owner(self):
+        session, selector, code = self.run_loop(
+            ["stdin", "stdin", "stdin", "stdin", "control"],
+            ["status\n", "x" * 4097, "power off\n", ""])
+        self.assertEqual(code, 0)
+        self.assertIn({"ok": True, "result": session.status.return_value}, self.notices)
+        errors = [n["error"] for n in self.notices if isinstance(n, dict) and n.get("ok") is False]
+        self.assertEqual(len(errors), 2)
+        self.assertIn("exceeds 4096", errors[0])
+        self.assertTrue(any(isinstance(n, str) and n.startswith("stdin closed; owner retained") for n in self.notices))
+        selector.unregister.assert_called_once()
+        session.finish.assert_not_called()  # closing stdin never finishes or stops the source
+        session.interrupt.assert_not_called()
+
+    def test_control_fault_interrupts_recording_but_keeps_handshake(self):
+        session, _, code = self.run_loop(["control", "control"], control_errors=1)
+        self.assertEqual(code, 0)
+        session.interrupt.assert_called_once()
+        self.assertIn("control error: RuntimeError: bad control frame", session.interrupt.call_args.args[0])
+        self.assertTrue(any(isinstance(n, str) and n.startswith("Control error, owner retained") for n in self.notices))
+        session.finish.assert_not_called()
+
     def test_cli_ready_requires_fault_free_holding_and_complete_cleanup_evidence(self):
         for override in ({"fault": "UNKNOWN"}, {"holding": False},
                          {"cleanup_errors": ["OFF failed"]},

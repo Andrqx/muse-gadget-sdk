@@ -30,7 +30,7 @@ static esp_codec_dev_handle_t s_ptest_spk, s_ptest_mic;
 static i2s_chan_handle_t s_ptest_tx, s_ptest_rx;
 static const audio_codec_if_t *s_ptest_dac_if, *s_ptest_adc_if;
 static int s_ptest_volume;
-static int init_error, open_error, lowlevel_error, force_error;
+static int init_error, open_error, lowlevel_error, force_error, disable_error;
 static unsigned init_calls, close_calls, force_calls, disable_calls;
 static int codec_enable(const audio_codec_if_t *codec, bool on)
 {
@@ -67,7 +67,7 @@ static int esp_codec_dev_close(esp_codec_dev_handle_t handle)
 static int esp_codec_dev_set_out_vol(esp_codec_dev_handle_t h, int v) { (void)h; (void)v; return 0; }
 static int esp_codec_dev_set_in_gain(esp_codec_dev_handle_t h, float v) { (void)h; (void)v; return 0; }
 static int i2s_channel_enable(i2s_chan_handle_t h) { (void)h; return 0; }
-static int i2s_channel_disable(i2s_chan_handle_t h) { (void)h; disable_calls++; return 0; }
+static int i2s_channel_disable(i2s_chan_handle_t h) { (void)h; disable_calls++; return disable_error; }
 #define EXP_PWR_CODEC_PA 4096
 static int ptest_set(unsigned mask, bool on) { (void)mask; (void)on; return 0; }
 static int ptest_force_suspend(void)
@@ -210,6 +210,40 @@ int main(int argc, char **argv)
         assert(!ptest_audio_close());
         assert(disable_calls == 2); /* never disable stopped channels again */
         assert(s_ptest_codec_state == MUSE_PTEST_CODEC_INITIALIZED);
+    } else if (mode == 13) {
+        /* A real DMA stop failure on constructor-only codecs is not quietly
+         * relabelled stopped: it poisons the driver and forces the vendor
+         * shutdown, keeping the first error. */
+        assert(!ptest_audio_initialize());
+        disable_error = ESP_FAIL;
+        cleanup = ptest_audio_close();
+        assert(cleanup == ESP_FAIL && !s_ptest_i2s_stopped && s_ptest_audio_poisoned);
+        assert(force_calls == 1 && disable_calls == 2 && !hw_active);
+        assert(s_ptest_codec_state == MUSE_PTEST_CODEC_INITIALIZED); /* never claims suspended */
+        disable_error = ESP_ERR_INVALID_STATE; /* already stopped is accepted */
+        s_ptest_i2s_stopped = false;
+        assert(ptest_audio_close() == ESP_OK && s_ptest_i2s_stopped);
+        retry = ptest_audio_open();
+        assert(retry == ESP_ERR_INVALID_STATE); /* poisoned driver is not reused */
+    } else if (mode == 14) {
+        /* Opened codecs whose suspended snapshot hits an I2C transport error:
+         * the error wins, the driver is poisoned and the forced vendor
+         * sequence still runs as best effort. */
+        assert(!ptest_audio_open());
+        reg_transport_error = 0x0d;
+        cleanup = ptest_audio_close();
+        assert(cleanup == 263 && s_ptest_audio_poisoned && force_calls == 1);
+        assert(s_ptest_codec_state == MUSE_PTEST_CODEC_INITIALIZED);
+    } else if (mode == 15) {
+        /* Constructor-final bytes are reported as expected only for the
+         * initialized label; a stray byte is evidence, not failure. */
+        assert(!ptest_audio_initialize());
+        assert(!ptest_codec_snapshot());
+        assert(s_ptest_codec_regs.adc_variant == 2 && s_ptest_codec_regs.dac_mask == 0x7f && s_ptest_codec_regs.adc_mask == 0x0f);
+        assert(s_ptest_codec_regs.expected);
+        wrong_register_values = true;
+        operation = ptest_codec_snapshot();
+        assert(!operation && !s_ptest_codec_regs.expected);
     } else if (mode == 9 || mode == 10) {
         s_ptest_codec_state = MUSE_PTEST_CODEC_SUSPENDED;
         hw_active = false;

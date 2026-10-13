@@ -185,9 +185,12 @@ board-neutral core and board hooks:
    off, console settings for your bridge. Leave
    `CONFIG_ESP_SLEEP_GPIO_RESET_WORKAROUND` off unless you measure it: GPIO sleep
    isolation cost +0.10 mA on the Watcher.
-6. **Extend the host tests.** Add your board's fakes beside
-   `tests/power_test_harness.c` and `tests/power_test_bsp_harness.c`,
-   cover apply/revert, readback and USB-return paths, then run the full suite
+6. **Extend the host tests.** `tests/power_test_harness.c` runs the core
+   against fake hooks; `tests/power_test_board_harness.c` and
+   `tests/power_test_bsp_harness.c` compile the Watcher's real hook bodies
+   against modeled drivers (pads, expander, codecs). Add the same for your
+   board: apply/revert round trips, refused states, readback drift,
+   USB-return and deep-sleep hold paths. Then run the full suite
    (`python3 -m unittest discover -s tests -p 'test_*.py'`).
 7. **Build and flash** in its own build directory, the way `../../AGENTS.md`
    describes for your board.

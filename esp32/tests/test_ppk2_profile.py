@@ -566,6 +566,144 @@ class ControlTest(unittest.TestCase):
             finally:
                 server.close()
 
+    def test_interactive_commands_are_strict(self):
+        self.assertEqual(interactive_command("begin idle"), {"op": "begin", "label": "idle", "duration_s": None})
+        self.assertEqual(interactive_command("begin idle 2.5"), {"op": "begin", "label": "idle", "duration_s": 2.5})
+        self.assertEqual(interactive_command("end"), {"op": "end"})
+        self.assertEqual(interactive_command("status"), {"op": "status"})
+        self.assertEqual(interactive_command("finish USB_RECONNECTED"), {"op": "finish", "usb_reconnected": True})
+        for line in ("", "begin", "begin idle 1 2", "end now", "finish usb_reconnected", "power off"):
+            with self.subTest(line=line), self.assertRaises(ValueError):
+                interactive_command(line)
+
+    def test_server_rejects_wrong_token_and_discards_oversized_lines(self):
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            server = ControlServer(Path(directory) / "control")
+            session = mock.Mock()
+            session.status.return_value = {"holding": True}
+            reply = "reply-" + "a" * 32 + ".fifo"
+            os.mkfifo(server.directory / reply, 0o600)
+            reply_fd = os.open(server.directory / reply, os.O_RDWR | os.O_NONBLOCK)
+            command_fd = os.open(server.directory / "commands.fifo", os.O_WRONLY | os.O_NONBLOCK)
+            try:
+                def send(raw):
+                    os.write(command_fd, raw)
+                    for _ in range(3):  # each call reads at most one 4096-byte chunk
+                        server.service(session)
+
+                def frame(token, command):
+                    return (json.dumps({"token": token, "reply": reply, "command": command}) + "\n").encode()
+
+                send(frame("stale-token", {"op": "status"}))
+                self.assertIn("wrong session token", json.loads(os.read(reply_fd, 4096))["error"])
+                session.status.assert_not_called()
+                # An overlong line is dropped whole; the next line still works.
+                send(b"x" * 4100)
+                send(b"y" * 100 + frame(server.token, {"op": "finish", "usb_reconnected": True}))
+                send(frame(server.token, {"op": "status"}))
+                self.assertEqual(json.loads(os.read(reply_fd, 4096)), {"ok": True, "result": {"holding": True}})
+                session.finish.assert_not_called()
+                session.status.assert_called_once()
+                # Malformed JSON gets no reply (there is no reply address).
+                send(b"not json\n")
+                with self.assertRaises(BlockingIOError):
+                    os.read(reply_fd, 4096)
+            finally:
+                os.close(command_fd)
+                os.close(reply_fd)
+                server.close()
+            self.assertFalse((server.directory / "commands.fifo").exists())
+            server.close()  # idempotent once the FIFO is gone
+
+    def test_server_replies_only_to_private_fifos_within_budget(self):
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            server = ControlServer(Path(directory) / "control")
+            try:
+                server._reply("../escape.fifo", {"ok": True})
+                self.assertFalse((Path(directory) / "escape.fifo").exists())
+                regular = server.directory / ("reply-" + "b" * 32 + ".fifo")
+                regular.write_text("")
+                server._reply(regular.name, {"ok": True, "result": {}})
+                self.assertEqual(regular.read_text(), "")  # not a FIFO: left alone
+                name = "reply-" + "c" * 32 + ".fifo"
+                os.mkfifo(server.directory / name, 0o600)
+                fd = os.open(server.directory / name, os.O_RDWR | os.O_NONBLOCK)
+                try:
+                    server._reply(name, {"ok": True, "result": {"label": "x" * 5000}})
+                    self.assertEqual(json.loads(os.read(fd, 4096)),
+                                     {"ok": False, "error": "response exceeds handshake budget"})
+                finally:
+                    os.close(fd)
+                server._reply("reply-" + "d" * 32 + ".fifo", {"ok": True})  # client gone: ignored
+            finally:
+                server.close()
+
+    def test_send_command_validates_before_writing(self):
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            server = ControlServer(Path(directory) / "control")
+            try:
+                for timeout in (True, 0, -1, 121, float("inf"), float("nan"), "5"):
+                    with self.subTest(timeout=timeout), self.assertRaises(ValueError):
+                        send_command(server.directory, {"op": "status"}, timeout)
+                with self.assertRaises(ValueError):
+                    send_command(server.directory, {"op": "begin", "label": "x" * 5000}, 1)
+                self.assertEqual(list(server.directory.glob("reply-*")), [])
+                server.directory.chmod(0o755)
+                with self.assertRaisesRegex(ValueError, "owner-only"):
+                    send_command(server.directory, {"op": "status"}, 1)
+                server.directory.chmod(0o700)
+                os.close(server.fd)
+                server.fd = None
+                (server.directory / "commands.fifo").unlink()
+                (server.directory / "commands.fifo").write_text("")
+                with self.assertRaisesRegex(ValueError, "not a FIFO"):
+                    send_command(server.directory, {"op": "status"}, 1)
+                self.assertEqual(list(server.directory.glob("reply-*")), [])
+            finally:
+                server.close()
+
+    def test_control_cli_validates_timeout_and_never_opens_serial(self):
+        from tools.power import ppk2_profile as cli
+        printed = []
+        with mock.patch.object(cli, "_print", side_effect=lambda value, **kwargs: printed.append(value)), \
+             mock.patch.object(cli, "send_command", return_value={"holding": True}) as send, \
+             mock.patch.object(cli, "PPK2Session") as session:
+            self.assertEqual(cli.main(["control", "--control-dir", "c", "--timeout-s", "0.01", "status"]), 1)
+            self.assertIn("control timeout", printed[-1])
+            send.assert_not_called()
+            self.assertEqual(cli.main(["control", "--control-dir", "c", "begin", "--label", "idle", "--duration-s", "2"]), 0)
+            send.assert_called_with(Path("c"), {"op": "begin", "label": "idle", "duration_s": 2.0}, 10)
+            self.assertEqual(cli.main(["control", "--control-dir", "c", "finish", "--usb-reconnected"]), 0)
+            send.assert_called_with(Path("c"), {"op": "finish", "usb_reconnected": True}, 10)
+            self.assertEqual(printed[-1], {"holding": True})
+            session.assert_not_called()
+        with mock.patch.object(cli, "_print", side_effect=lambda value, **kwargs: printed.append(value)), \
+             mock.patch.object(cli, "port_descriptions", return_value=[{"port": "fake"}]):
+            self.assertEqual(cli.main(["discover"]), 0)
+            self.assertEqual(printed[-1], [{"port": "fake"}])
+
+
+class BenchmarkTest(unittest.TestCase):
+    def test_synthetic_benchmark_counts_every_sample_without_hardware(self):
+        try:
+            import importlib.metadata
+            if importlib.metadata.version("ppk2-api") != "0.9.2":
+                raise ImportError
+        except Exception:
+            self.skipTest("pinned ppk2-api==0.9.2 not installed")
+        from tools.power.bench_ppk2 import benchmark
+        with mock.patch("serial.tools.list_ports.comports", side_effect=AssertionError("enumerated hardware")):
+            result = benchmark(0.1, raw=True)
+        self.assertTrue(result["synthetic_only"])
+        self.assertFalse(result["hardware_access"])
+        self.assertIsNone(result["fault"])
+        self.assertEqual(result["sample_count"], 10_000)
+        self.assertEqual(result["raw_bytes"], 10_000 * struct.calcsize("<Qf"))
+        self.assertGreater(result["aggregate_bytes"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

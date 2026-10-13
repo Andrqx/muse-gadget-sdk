@@ -267,6 +267,25 @@ class PowerTest(unittest.TestCase):
                 self.assertEqual(record["enter_us"], record["end_us"])
         self.assertEqual(stats["active"], 26)
 
+    def test_codec_snapshot_pool_overflow_is_explicitly_unavailable(self):
+        # Two peripheral repeats with every snapshot distinct need 54 slots;
+        # the 26-slot RTC pool keeps the first 26 and marks the rest
+        # unavailable instead of overwriting or failing the run.
+        rows = self.run_commands(
+            "codec_unique 1", arm(repeats=2), "usb 0", "advance 180000", ">ptest.results",
+        )
+        result = rows[-1]
+        self.assertTrue(result["complete"])
+        records = result["records"]
+        self.assertEqual(len(records), 54)
+        self.assertTrue(all(r["status"] in ("ok", "skipped") for r in records))
+        measured = [r for r in records if r["status"] == "ok"]
+        self.assertEqual(len(measured), 46)
+        self.assertTrue(all(r["codec_regs_available"] for r in measured[:26]))
+        self.assertEqual(len({r["codec_regs"]["dac"]["00"] for r in measured[:26]}), 26)
+        self.assertFalse(any(r["codec_regs_available"] for r in measured[26:]))
+        self.assertTrue(all(r["valid"] and r["error"] == 0 for r in measured[26:]))
+
     def test_actual_timestamps_not_nominal_host_schedule(self):
         ack, result, _ = self.complete()
         self.assertLessEqual(result["last_usb_present_us"], result["vbus_removed_us"])
