@@ -6,6 +6,17 @@ The ESP32 CI (`.github/workflows/esp32.yml`) packages the boards listed in
 `boards.json` from its own builds, assembles the site on every run, and deploys
 it on pushes to `main`.
 
+## The SDK token
+
+The site's builds have no SDK token, and a gadget needs one to pair. After
+installing, the page asks for the maker's token and sends it to the gadget
+over serial as `>sdk_token=mgst_…` (`sdk-token.js`). The gadget stores it in
+NVS, answers `@sdk_token ok` and restarts with it; NVS survives updates from
+the page, so it's needed once per gadget. The firmware side is
+`esp32/main/sdk_token_console.h`: Muse boards take the command on their own
+console, other boards on the console UART and the chip's USB Serial/JTAG
+port. It's serial-only, so it can't be set over BLE.
+
 ## Adding a board
 
 Add an entry to `boards.json`. `board` must match a `board` in the build
@@ -30,5 +41,5 @@ mkdir /tmp/flasher/site && tar -xf /tmp/flasher/artifact.tar -C /tmp/flasher/sit
 python3 -m http.server 8000 --bind 127.0.0.1 --directory /tmp/flasher/site
 ```
 
-To try changes to the page itself, copy `index.html`, `paced-serial.js` and
-`boards.json` over the unpacked site and reload.
+To try changes to the page itself, copy `index.html`, `paced-serial.js`,
+`sdk-token.js` and `boards.json` over the unpacked site and reload.

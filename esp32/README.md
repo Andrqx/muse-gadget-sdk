@@ -112,6 +112,12 @@ idf.py build
 This builds for the ESP32-C5 DevKitC-1. The firmware lands in
 `build/muse-gadget.bin`.
 
+A build without a token can get one later over serial: send the line
+`>sdk_token=mgst_…` on the board's console, and it stores the token in NVS,
+answers `@sdk_token ok` and restarts with it. A stored token takes precedence
+over the build's. The [web flasher](../web-flasher/README.md) does this for
+you after installing.
+
 ### 3. Flash
 
 Plug in the board and flash it:
@@ -269,9 +275,10 @@ things you can change:
 
 A few things worth knowing:
 
-- Your SDK token ships inside the firmware, so treat it as an identifier
-  rather than a password. If it leaks, revoke it on gadgets.muse.ai, generate
-  a new one, and rebuild.
+- Your SDK token ships inside the firmware, or sits in NVS if you set it over
+  serial, so treat it as an identifier rather than a password. If it leaks,
+  revoke it on gadgets.muse.ai, generate a new one, and rebuild or send the
+  new one over serial.
 - **We strongly recommend enabling NVS encryption** if your board supports it.
   NVS stores Wi-Fi credentials and device tokens in flash; without encryption,
   anyone with physical access to the board can read them. Enable it with

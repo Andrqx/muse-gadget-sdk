@@ -32,6 +32,7 @@
 #include "config_store.h"
 #include "identity.h"
 #include "noise_control.h"
+#include "sdk_token_console.h"
 #include "stack_monitor.h"
 #include "wifi_known.h"
 #include "wifi_mgr.h"
@@ -622,6 +623,7 @@ void muse_glue_start(void) {
     muse_input_power_init();
     s_ready = xEventGroupCreate();
     muse_link_register(&s_ops);
+    muse_input_set_console_hook(sdk_token_console_command);
     muse_ble_set_name(identity_ble_name());
     ble_companion_t companion = {
         .svcs = muse_ble_services(),

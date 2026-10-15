@@ -26,6 +26,9 @@ limitations under the License.
     .note { color: #666; font-size: 0.9rem; }
     #board-note { background: #fff4e5; border-left: 4px solid #f0a020; padding: 0.5rem 0.75rem; margin: 0 0 1.5rem; }
     #board-note:empty { display: none; }
+    #token { font: 0.9rem ui-monospace, monospace; padding: 0.4rem; width: 100%; box-sizing: border-box; margin: 0.5rem 0; }
+    #token-status.error { color: #b00020; }
+    #token-status.ok { color: #1b7f37; }
   </style>
 </head>
 <body>
@@ -47,10 +50,24 @@ limitations under the License.
     <span slot="not-allowed">Web Serial needs a secure (https) connection.</span>
   </esp-web-install-button>
 
+  <h2>Your SDK token</h2>
+  <p>
+    A gadget needs your SDK token to pair. Get it from
+    <a href="https://gadgets.muse.ai/settings/sdk-tokens">gadgets.muse.ai</a>
+    (Account &gt; SDK tokens). Once the install is done, close the installer,
+    paste the token here and send it to the gadget, picking the same port. It
+    goes only to the gadget, over USB, and the gadget keeps it through updates.
+  </p>
+  <label for="token">SDK token</label>
+  <input id="token" type="password" placeholder="mgst_…" autocomplete="off" spellcheck="false">
+  <button id="send-token">Send to gadget</button>
+  <p id="token-status"></p>
+
   <p class="note">
-    Updating keeps your pairing and Wi-Fi settings. On a first install you can
-    choose to erase the device. Once flashed, set the device up with the Muse
-    app. Built from <a id="commit" href="https://github.com/facebookincubator/muse-gadget-sdk">main</a>.
+    Updating keeps your pairing, Wi-Fi settings and SDK token. On a first
+    install you can choose to erase the device. Once the token is in, set the
+    gadget up with the Muse app. Built from
+    <a id="commit" href="https://github.com/facebookincubator/muse-gadget-sdk">main</a>.
   </p>
   <p class="note">
     Board not showing up? Some boards need you to hold <strong>BOOT</strong>
@@ -59,6 +76,7 @@ limitations under the License.
 
   <script type="module">
     import { installPacedSerial } from "./paced-serial.js";
+    import { isSdkToken, sendSdkToken } from "./sdk-token.js";
 
     const select = document.getElementById("board");
     const button = document.getElementById("install");
@@ -81,6 +99,39 @@ limitations under the License.
     };
     select.addEventListener("change", update);
     update();
+
+    const tokenInput = document.getElementById("token");
+    const sendButton = document.getElementById("send-token");
+    const tokenStatus = document.getElementById("token-status");
+    const showStatus = (text, kind = "") => {
+      tokenStatus.textContent = text;
+      tokenStatus.className = kind;
+    };
+    sendButton.disabled = !pacing;
+    sendButton.addEventListener("click", async () => {
+      const token = tokenInput.value.trim();
+      if (!isSdkToken(token)) {
+        showStatus("That isn't an SDK token. Copy it again from gadgets.muse.ai.", "error");
+        return;
+      }
+      let port;
+      try {
+        port = await navigator.serial.requestPort();
+      } catch {
+        return;   // no port picked
+      }
+      sendButton.disabled = true;
+      showStatus("Sending the token to the gadget…");
+      try {
+        await sendSdkToken(port, token);
+        tokenInput.value = "";
+        showStatus("Done. The gadget restarts with your token; set it up in the Muse app.", "ok");
+      } catch (e) {
+        showStatus(e.message, "error");
+      } finally {
+        sendButton.disabled = false;
+      }
+    });
 
     if (build?.commit) {
       const link = document.getElementById("commit");

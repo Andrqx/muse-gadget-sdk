@@ -16,7 +16,10 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
+
+#define IDENTITY_SDK_TOKEN_LEN 48
 
 // Both buffers must be at least 32 bytes. XXXXXX = last 3 WiFi STA MAC octets.
 // node_id "homelink-XXXXXX" (lower) is the backend device identifier (used by
@@ -27,5 +30,11 @@ const char *identity_node_id(void);
 const char *identity_ble_name(void);
 const char *identity_mac(void);
 const char *identity_device_id(void);
-// The maker's SDK token (CONFIG_GADGET_SDK_TOKEN), or NULL when the build has none.
+// The maker's SDK token: the one stored in NVS, else the build's
+// (CONFIG_GADGET_SDK_TOKEN), else NULL. Call after identity_init().
 const char *identity_sdk_token(void);
+// Whether token looks like an SDK token, the way the build checks one.
+bool identity_sdk_token_valid(const char *token);
+// Stores a valid token in NVS; it's used from the next boot. False if token
+// isn't valid or can't be stored.
+bool identity_set_sdk_token(const char *token);
