@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
@@ -372,6 +373,15 @@ static bool op_hatch_vm(const char *want_vm, char *vm_id, size_t id_cap, char *v
     return s_linked && app_hatch_vm_credentials(want_vm, vm_id, id_cap, vm_name, name_cap, vm_token);
 }
 
+// Pairing and the API client take the SDK token at boot, so a new one
+// needs a restart, as when it's set over serial (sdk_token_console.h).
+static bool op_sdk_token_set(const char *token) {
+    if (!identity_set_sdk_token(token)) return false;
+    ESP_LOGI(TAG, "SDK token %.12s set in settings, restarting to use it", token);
+    esp_restart();
+    return true;
+}
+
 static bool op_talk_press(void) {
     return app_confirm_pairing_press();
 }
@@ -392,6 +402,8 @@ static const muse_link_ops_t s_ops = {
     .ble_apply = op_ble_apply,
     .ble_started = op_ble_started,
     .hatch_linked = op_hatch_linked,
+    .sdk_token = identity_sdk_token,
+    .sdk_token_set = op_sdk_token_set,
     .hatch_vm = op_hatch_vm,
     .talk_press = op_talk_press,
     .reset_setup = op_reset_setup,
