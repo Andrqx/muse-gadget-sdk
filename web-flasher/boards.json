@@ -34,5 +34,23 @@
     "name": "Seeed Studio SenseCAP Watcher",
     "target": "esp32s3",
     "overlays": ";devices/sdkconfig.muse;devices/sdkconfig.muse-sensecap-watcher"
+  },
+  {
+    "board": "sensecap-indicator",
+    "name": "Seeed Studio SenseCAP Indicator",
+    "target": "esp32s3",
+    "overlays": ";devices/sdkconfig.sensecap-indicator"
+  },
+  {
+    "board": "reterminal-e1001",
+    "name": "Seeed Studio reTerminal E1001 (7.5\" e-paper)",
+    "target": "esp32s3",
+    "overlays": ";devices/sdkconfig.reterminal-e1001"
+  },
+  {
+    "board": "reterminal-e1002",
+    "name": "Seeed Studio reTerminal E1002 (7.3\" colour e-paper)",
+    "target": "esp32s3",
+    "overlays": ";devices/sdkconfig.reterminal-e1002"
   }
 ]
