@@ -14,16 +14,14 @@
 
 # Builds firmware for the boards listed in web-flasher/boards.json and
 # publishes it with a browser-based flasher (ESP Web Tools) on GitHub Pages.
+# Every push to the release branch, which only repo owners can push to,
+# builds and deploys the site.
 
 name: Web flasher
 
 on:
   push:
-    branches: [main]
-    paths:
-      - esp32/**
-      - web-flasher/**
-      - .github/workflows/web-flasher.yml
+    branches: [release]
   # PRs that touch the flasher build the site but don't deploy it.
   pull_request:
     paths:
@@ -120,7 +118,7 @@ jobs:
   deploy:
     name: Deploy
     needs: site
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/release'
     runs-on: ubuntu-latest
     permissions:
       pages: write
