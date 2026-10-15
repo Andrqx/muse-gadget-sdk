@@ -24,6 +24,8 @@ limitations under the License.
     body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
     select { font-size: 1rem; padding: 0.4rem; margin: 0.5rem 0 1.5rem; width: 100%; }
     .note { color: #666; font-size: 0.9rem; }
+    #board-note { background: #fff4e5; border-left: 4px solid #f0a020; padding: 0.5rem 0.75rem; margin: 0 0 1.5rem; }
+    #board-note:empty { display: none; }
   </style>
 </head>
 <body>
@@ -36,6 +38,7 @@ limitations under the License.
 
   <label for="board">Board</label>
   <select id="board"></select>
+  <p id="board-note"></p>
 
   <esp-web-install-button id="install">
     <span slot="unsupported">
@@ -55,8 +58,12 @@ limitations under the License.
   </p>
 
   <script type="module">
+    import { installPacedSerial } from "./paced-serial.js";
+
     const select = document.getElementById("board");
     const button = document.getElementById("install");
+    const note = document.getElementById("board-note");
+    const pacing = "SerialPort" in window ? installPacedSerial(SerialPort) : null;
 
     const [boards, build] = await Promise.all([
       fetch("boards.json").then((r) => r.json()),
@@ -65,7 +72,13 @@ limitations under the License.
     for (const { board, name } of boards) {
       select.add(new Option(name, board));
     }
-    const update = () => button.setAttribute("manifest", `firmware/${select.value}/manifest.json`);
+    const update = () => {
+      const board = boards.find((b) => b.board === select.value);
+      button.setAttribute("manifest", `firmware/${board.board}/manifest.json`);
+      // Boards whose USB bridge drops bytes get their writes paced.
+      pacing?.setEnabled(Boolean(board.paced));
+      note.innerHTML = board.note ?? "";
+    };
     select.addEventListener("change", update);
     update();
 
