@@ -28,5 +28,11 @@
     "name": "Waveshare ESP32-S3-Touch-LCD-1.85C",
     "target": "esp32s3",
     "overlays": ";devices/sdkconfig.muse;devices/sdkconfig.muse-waveshare-s3-185c"
+  },
+  {
+    "board": "muse-sensecap-watcher",
+    "name": "Seeed Studio SenseCAP Watcher",
+    "target": "esp32s3",
+    "overlays": ";devices/sdkconfig.muse;devices/sdkconfig.muse-sensecap-watcher"
   }
 ]
