@@ -26,7 +26,7 @@ limitations under the License.
     select { font-size: 1rem; padding: 0.4rem; margin: 0.5rem 0 1rem; width: 100%; }
     .note { color: #666; font-size: 0.9rem; }
     .warning { background: #fff4e5; border-left: 4px solid #f0a020; padding: 0.5rem 0.75rem; }
-    #board-note:empty, #token-warning[hidden], #all-ports-row[hidden] { display: none; }
+    #board-note:empty, [hidden] { display: none; }
     #token { font: 0.9rem ui-monospace, monospace; padding: 0.4rem; width: 100%; box-sizing: border-box; margin: 0.5rem 0; }
     .status.error { color: #b00020; }
     .status.ok { color: #1b7f37; }
@@ -45,11 +45,18 @@ limitations under the License.
     <a href="https://gadgets.muse.ai/settings/sdk-tokens">gadgets.muse.ai</a>
     (Account &gt; SDK tokens). It's sent to the gadget over USB after
     installing, and the gadget keeps it through updates. This browser
-    remembers it for next time (<a href="#" id="forget-token">forget it</a>).
+    remembers it for next time.
   </p>
-  <label for="token">SDK token</label>
-  <input id="token" type="password" placeholder="mgst_…" autocomplete="off" spellcheck="false">
-  <p id="token-check" class="status"></p>
+  <p id="token-saved" hidden>
+    Saved token: <code id="token-hint"></code> ·
+    <a href="#" id="change-token">change</a> ·
+    <a href="#" id="forget-token">forget</a>
+  </p>
+  <div id="token-entry">
+    <label for="token">SDK token</label>
+    <input id="token" type="password" placeholder="mgst_…" autocomplete="off" spellcheck="false">
+    <p id="token-check" class="status"></p>
+  </div>
 
   <h2>2. Install</h2>
   <label for="board">Board</label>
@@ -132,28 +139,45 @@ limitations under the License.
     select.addEventListener("change", update);
     await update();
 
-    // The token, remembered in this browser.
+    // The token, remembered in this browser. Once saved, only its first 12
+    // characters show, the hint the gadget logs and gadgets.muse.ai shows.
     const TOKEN_KEY = "muse-sdk-token";
-    const token = () => (isSdkToken(tokenInput.value.trim()) ? tokenInput.value.trim() : null);
-    const tokenChanged = () => {
+    let saved = localStorage.getItem(TOKEN_KEY);
+    if (!isSdkToken(saved ?? "")) saved = null;
+    const token = () => saved;
+    const showToken = (entering = false) => {
+      $("token-saved").hidden = !saved || entering;
+      $("token-entry").hidden = Boolean(saved) && !entering;
+      $("token-hint").textContent = saved ? `${saved.slice(0, 12)}…` : "";
+      $("token-warning").hidden = Boolean(saved);
+    };
+    tokenInput.addEventListener("input", () => {
       const value = tokenInput.value.trim();
-      if (token()) {
+      if (isSdkToken(value)) {
+        saved = value;
         localStorage.setItem(TOKEN_KEY, value);
-        showStatus($("token-check"), "Saved in this browser.", "ok");
+        tokenInput.value = "";
+        showStatus($("token-check"), "");
+        showToken();
       } else {
         showStatus($("token-check"), value ? "That isn't an SDK token. Copy it again from gadgets.muse.ai." : "", "error");
       }
-      $("token-warning").hidden = Boolean(token());
-    };
-    tokenInput.value = localStorage.getItem(TOKEN_KEY) ?? "";
-    tokenInput.addEventListener("input", tokenChanged);
-    tokenChanged();
+    });
+    tokenInput.addEventListener("blur", () => {
+      if (!tokenInput.value.trim()) showToken();   // changed their mind
+    });
+    $("change-token").addEventListener("click", (e) => {
+      e.preventDefault();
+      showToken(true);
+      tokenInput.focus();
+    });
     $("forget-token").addEventListener("click", (e) => {
       e.preventDefault();
+      saved = null;
       localStorage.removeItem(TOKEN_KEY);
-      tokenInput.value = "";
-      tokenChanged();
+      showToken();
     });
+    showToken();
 
     const send = async (port, statusEl) => {
       showStatus(statusEl, "Sending your SDK token to the gadget…");
