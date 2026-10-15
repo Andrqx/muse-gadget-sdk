@@ -78,6 +78,7 @@ export async function sendSdkToken(port, token, { timeoutMs = 25000, retryMs = 3
   if (answer === "error invalid") throw new Error("The gadget says that isn't an SDK token.");
   if (answer) throw new Error(`The gadget couldn't store the token (${answer}).`);
   throw new Error(
-    "The gadget didn't answer. Check it runs firmware from this page and you picked its console port, then try again.",
+    "The gadget didn't answer. Check it runs firmware from this page and you picked its console port. " +
+      "If it still doesn't answer, unplug it, plug it back in and try again.",
   );
 }
