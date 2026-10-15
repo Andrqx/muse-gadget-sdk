@@ -274,8 +274,12 @@ static esp_err_t read_power(muse_power_t *out)
         mv = raw * 3300 / 4096;
     }
     out->battery_mv = mv * 3;
-    int pct = (out->battery_mv - 3300) * 100 / (4200 - 3300);
-    out->battery_pct = out->battery_mv < 2500 ? -1 : pct < 0 ? 0 : pct > 100 ? 100 : pct;
+    /* No percentage until the meter is checked with a cell: on USB alone the
+     * divider reads the charger's ~4.2 V, which looks like a full cell, and
+     * nothing tells USB apart, so a percentage would run the battery policy
+     * (light sleep, battery UI) while plugged in. The voltage stays for
+     * diagnostics. */
+    out->battery_pct = -1;
     /* No charge-state or VBUS line reaches the ESP32, and the console is on
      * the CH343P rather than the chip's own USB. */
     out->charging = false;
