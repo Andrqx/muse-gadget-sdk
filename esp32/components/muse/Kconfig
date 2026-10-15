@@ -234,4 +234,17 @@ menu "Muse"
             them. Needs PSRAM. Without it, voice notes go over Home Link's own
             session to its paired VM and replies are shown as text.
 
+    config MUSE_HATCH_COMPACT_BUFFERS
+        bool "Smaller voice session buffers, for 2 MB of PSRAM"
+        depends on MUSE_HATCH
+        default n
+        help
+            The voice session keeps about 830 KB of audio buffers in PSRAM:
+            512 KB of reply speech, 8 s of mic backlog and 2 s of decoded
+            audio. With 2 MB of PSRAM that leaves too little once Home Link
+            is connected, and a chat turn runs out of memory. This keeps
+            128 KB of speech, 2 s of mic backlog and 1 s of decoded audio
+            (about 220 KB), which still covers a push-to-talk turn. Board
+            overlays with 2 MB of PSRAM turn it on.
+
 endmenu

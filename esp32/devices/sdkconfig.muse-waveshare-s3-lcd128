@@ -42,6 +42,9 @@ CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 # CONFIG_SPIRAM_IGNORE_NOTFOUND is not set
 # That forces Wi-Fi's TX buffers static, in internal RAM: 8, not 16.
 CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
+# The voice session's full buffers would leave 2 MB of PSRAM nearly empty once
+# connected, and chat turns run out of memory.
+CONFIG_MUSE_HATCH_COMPACT_BUFFERS=y
 
 # Set your SDK token in build-muse-waveshare-s3-lcd128/sdkconfig (ignored by
 # Git), not here.
