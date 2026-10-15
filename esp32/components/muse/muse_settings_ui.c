@@ -1265,7 +1265,7 @@ static void build_power_page(lv_obj_t *tile)
     const char *sleep = muse_board->power_button ? muse_board->power_button : muse_board->aux_button;
     if (power && !strcmp(power, "screen")) {
         /* Touch-only boards (the LCD-7 and LCD-1.28) wake on a tap. */
-        strlcpy(text, "Tap the screen to turn it back on.", sizeof(text));
+        snprintf(text, sizeof(text), "Tap the screen to turn it back on.");
     } else if (sleep) {
         snprintf(text, sizeof(text), "Press the %s button to turn it back on. To just turn the screen off, press the %s button.",
                  power, sleep);
