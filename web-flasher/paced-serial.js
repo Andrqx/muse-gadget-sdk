@@ -17,24 +17,24 @@
 // Some USB-UART bridges (the SenseCAP Watcher's CH342) have no flow control
 // and drop bytes when a whole packet arrives faster than the UART drains it,
 // so flashing fails while uploading the stub or on the first flash block.
-// While pacing is on, every SerialPort's writable stream sends small chunks
+// While pacing is set, every SerialPort's writable stream sends small chunks
 // with a pause after each. esptool-js, inside ESP Web Tools, takes a writer
 // from port.writable for each write, so it picks this up without changes.
 //
-// Chrome needs more slack than paced_esptool.py's 64 bytes at the line rate.
-// On a Watcher, 64-byte chunks failed even at half the line rate, while 32-byte
-// chunks at half the line rate wrote and verified 64 KB, about 6.7 KB/s.
+// Chrome needs more slack than paced_esptool.py's 64 bytes at the line rate:
+// on a Watcher, 64-byte chunks failed even at half the line rate, while 32-byte
+// chunks wrote and verified 64 KB at about 6.7 KB/s. Each board's settings are
+// in boards.json.
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// chunk: bytes per write. factor: how much longer than the line takes to wait.
-export function installPacedSerial(SerialPortClass, { chunk: size = 32, factor = 2 } = {}) {
+export function installPacedSerial(SerialPortClass) {
   const proto = SerialPortClass.prototype;
   const writable = Object.getOwnPropertyDescriptor(proto, "writable");
   const open = proto.open;
   const baudRates = new WeakMap(); // port -> baud rate it was opened at
   const paced = new WeakMap(); // the port's own writable -> its paced wrapper
-  let enabled = false;
+  let pacing = null; // { chunk, factor } while pacing is set
 
   proto.open = function (options) {
     baudRates.set(this, options.baudRate);
@@ -45,7 +45,7 @@ export function installPacedSerial(SerialPortClass, { chunk: size = 32, factor =
     configurable: true,
     get() {
       const real = writable.get.call(this);
-      if (!enabled || !real) return real;
+      if (!pacing || !real) return real;
       let stream = paced.get(real);
       if (!stream) {
         const port = this;
@@ -62,6 +62,7 @@ export function installPacedSerial(SerialPortClass, { chunk: size = 32, factor =
         stream = new WritableStream({
           write: (data) =>
             withWriter(async (writer) => {
+              const { chunk: size, factor } = pacing;
               const bytes = new Uint8Array(data);
               for (let i = 0; i < bytes.length; i += size) {
                 const chunk = bytes.slice(i, i + size);
@@ -81,8 +82,10 @@ export function installPacedSerial(SerialPortClass, { chunk: size = 32, factor =
   });
 
   return {
-    setEnabled(on) {
-      enabled = on;
+    // chunk: bytes per write. factor: how many times as long as the chunk
+    // takes on the wire to wait after it. null turns pacing off.
+    set(settings) {
+      pacing = settings ? { chunk: settings.chunk, factor: settings.factor } : null;
     },
   };
 }

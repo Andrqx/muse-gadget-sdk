@@ -76,7 +76,7 @@ limitations under the License.
       const board = boards.find((b) => b.board === select.value);
       button.setAttribute("manifest", `firmware/${board.board}/manifest.json`);
       // Boards whose USB bridge drops bytes get their writes paced.
-      pacing?.setEnabled(Boolean(board.paced));
+      pacing?.set(board.pacing ?? null);
       note.innerHTML = board.note ?? "";
     };
     select.addEventListener("change", update);
