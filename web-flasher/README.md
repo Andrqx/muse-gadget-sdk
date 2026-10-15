@@ -17,6 +17,15 @@ the page, so it's needed once per gadget. The firmware side is
 console, other boards on the console UART and the chip's USB Serial/JTAG
 port. It's serial-only, so it can't be set over BLE.
 
+## Catching the wrong board
+
+ESP Web Tools refuses a board whose chip doesn't match the build's. On top of
+that, `flasher-hooks.js` limits the port picker to the board's `usb` devices
+and, before erasing or writing, refuses a board whose flash can't hold the
+build's partitions (`min_flash_bytes`, which `make_manifest.py` reads from the
+partition table). It doesn't check PSRAM: esptool only sees PSRAM inside the
+chip's package, and some boards have it beside the chip.
+
 ## Adding a board
 
 Add an entry to `boards.json`. `board` must match a `board` in the build
@@ -26,6 +35,7 @@ matrix in `esp32.yml`; the site job fails if it doesn't.
 |----------|----------|---------|
 | `board`  | yes      | Board id, as in the build matrix. |
 | `name`   | yes      | Name shown in the board picker. |
+| `usb`    | no       | USB devices the board's console can show up as, as `"vid:pid"` strings (see `esp32/tools/muse/ports.py`). The port picker shows only these; leave it out if you're not sure, so the right port isn't hidden. |
 | `pacing` | no       | Paced serial writes for USB bridges that drop bytes, as `{"chunk": 32, "factor": 2}`: bytes per write, and how many times as long as a chunk takes on the wire to wait after it. Leave it out for boards that flash fine without. |
 | `note`   | no       | HTML shown under the picker when the board is selected: which port to pick, backups to take first, and so on. |
 
@@ -41,5 +51,5 @@ mkdir /tmp/flasher/site && tar -xf /tmp/flasher/artifact.tar -C /tmp/flasher/sit
 python3 -m http.server 8000 --bind 127.0.0.1 --directory /tmp/flasher/site
 ```
 
-To try changes to the page itself, copy `index.html`, `paced-serial.js`,
-`sdk-token.js` and `boards.json` over the unpacked site and reload.
+To try changes to the page itself, copy `index.html` and the `.js` and
+`boards.json` files over the unpacked site and reload.

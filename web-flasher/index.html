@@ -19,69 +19,92 @@ limitations under the License.
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Muse Gadget Web Flasher</title>
-  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <!-- Pinned: flasher-hooks.js relies on how this version works. -->
+  <script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
-    select { font-size: 1rem; padding: 0.4rem; margin: 0.5rem 0 1.5rem; width: 100%; }
+    select { font-size: 1rem; padding: 0.4rem; margin: 0.5rem 0 1rem; width: 100%; }
     .note { color: #666; font-size: 0.9rem; }
-    #board-note { background: #fff4e5; border-left: 4px solid #f0a020; padding: 0.5rem 0.75rem; margin: 0 0 1.5rem; }
-    #board-note:empty { display: none; }
+    .warning { background: #fff4e5; border-left: 4px solid #f0a020; padding: 0.5rem 0.75rem; }
+    #board-note:empty, #token-warning[hidden], #all-ports-row[hidden] { display: none; }
     #token { font: 0.9rem ui-monospace, monospace; padding: 0.4rem; width: 100%; box-sizing: border-box; margin: 0.5rem 0; }
-    #token-status.error { color: #b00020; }
-    #token-status.ok { color: #1b7f37; }
+    .status.error { color: #b00020; }
+    .status.ok { color: #1b7f37; }
   </style>
 </head>
 <body>
   <h1>Muse Gadget Web Flasher</h1>
   <p>
     Flash the open source Muse Gadget firmware onto your ESP32 board straight
-    from the browser. Plug the board in over USB, pick it below and press
-    <strong>Connect</strong>.
+    from the browser, in Chrome or Edge on a desktop computer.
   </p>
 
+  <h2>1. Your SDK token</h2>
+  <p>
+    A gadget needs your SDK token to pair. Get it from
+    <a href="https://gadgets.muse.ai/settings/sdk-tokens">gadgets.muse.ai</a>
+    (Account &gt; SDK tokens). It's sent to the gadget over USB after
+    installing, and the gadget keeps it through updates. This browser
+    remembers it for next time (<a href="#" id="forget-token">forget it</a>).
+  </p>
+  <label for="token">SDK token</label>
+  <input id="token" type="password" placeholder="mgst_…" autocomplete="off" spellcheck="false">
+  <p id="token-check" class="status"></p>
+
+  <h2>2. Install</h2>
   <label for="board">Board</label>
   <select id="board"></select>
-  <p id="board-note"></p>
-
+  <p id="board-note" class="warning"></p>
+  <p id="all-ports-row" class="note">
+    <label><input type="checkbox" id="all-ports"> Show all serial ports, not
+    just this board's USB device</label>
+  </p>
+  <p id="token-warning" class="warning" hidden>
+    You haven't entered your SDK token yet. You can install without it, but
+    the gadget can't pair until it has one.
+  </p>
   <esp-web-install-button id="install">
     <span slot="unsupported">
       Your browser doesn't support Web Serial. Use Chrome or Edge on a desktop computer.
     </span>
     <span slot="not-allowed">Web Serial needs a secure (https) connection.</span>
   </esp-web-install-button>
-
-  <h2>Your SDK token</h2>
-  <p>
-    A gadget needs your SDK token to pair. Get it from
-    <a href="https://gadgets.muse.ai/settings/sdk-tokens">gadgets.muse.ai</a>
-    (Account &gt; SDK tokens). Once the install is done, close the installer,
-    paste the token here and send it to the gadget, picking the same port. It
-    goes only to the gadget, over USB, and the gadget keeps it through updates.
-  </p>
-  <label for="token">SDK token</label>
-  <input id="token" type="password" placeholder="mgst_…" autocomplete="off" spellcheck="false">
-  <button id="send-token">Send to gadget</button>
-  <p id="token-status"></p>
-
   <p class="note">
-    Updating keeps your pairing, Wi-Fi settings and SDK token. On a first
-    install you can choose to erase the device. Once the token is in, set the
-    gadget up with the Muse app. Built from
-    <a id="commit" href="https://github.com/facebookincubator/muse-gadget-sdk">main</a>.
+    Keep this tab in front while installing. Updating keeps your pairing,
+    Wi-Fi settings and SDK token; on a first install you can choose to erase
+    the device. When the install is done, close the installer: the page sends
+    your token to the gadget, and then you set it up in the Muse app.
   </p>
+  <p id="install-status" class="status"></p>
+
+  <h2>Already installed?</h2>
+  <p>
+    Send your token to a gadget running firmware from this page, picking its
+    port: <button id="send-token">Send token to gadget</button>
+  </p>
+  <p id="token-status" class="status"></p>
+
   <p class="note">
     Board not showing up? Some boards need you to hold <strong>BOOT</strong>
-    while plugging in USB to enter download mode.
+    while plugging in USB to enter download mode. Built from
+    <a id="commit" href="https://github.com/facebookincubator/muse-gadget-sdk">main</a>.
   </p>
 
   <script type="module">
+    import { installFlasherHooks } from "./flasher-hooks.js";
     import { installPacedSerial } from "./paced-serial.js";
     import { isSdkToken, sendSdkToken } from "./sdk-token.js";
 
-    const select = document.getElementById("board");
-    const button = document.getElementById("install");
-    const note = document.getElementById("board-note");
+    const $ = (id) => document.getElementById(id);
+    const select = $("board");
+    const button = $("install");
+    const tokenInput = $("token");
+    const allPorts = $("all-ports");
     const pacing = "SerialPort" in window ? installPacedSerial(SerialPort) : null;
+    const showStatus = (el, text, kind = "") => {
+      el.textContent = text;
+      el.className = `status ${kind}`;
+    };
 
     const [boards, build] = await Promise.all([
       fetch("boards.json").then((r) => r.json()),
@@ -90,28 +113,87 @@ limitations under the License.
     for (const { board, name } of boards) {
       select.add(new Option(name, board));
     }
-    const update = () => {
-      const board = boards.find((b) => b.board === select.value);
-      button.setAttribute("manifest", `firmware/${board.board}/manifest.json`);
+
+    // The selected board, and how much flash its build needs (its manifest).
+    let board;
+    let minFlashBytes = 0;
+    const update = async () => {
+      board = boards.find((b) => b.board === select.value);
+      const manifestPath = `firmware/${board.board}/manifest.json`;
+      button.setAttribute("manifest", manifestPath);
       // Boards whose USB bridge drops bytes get their writes paced.
       pacing?.set(board.pacing ?? null);
-      note.innerHTML = board.note ?? "";
+      $("board-note").innerHTML = board.note ?? "";
+      $("all-ports-row").hidden = !board.usb;
+      minFlashBytes = 0;
+      const manifest = await fetch(manifestPath).then((r) => r.json()).catch(() => null);
+      if (board.board === select.value) minFlashBytes = manifest?.min_flash_bytes ?? 0;
     };
     select.addEventListener("change", update);
-    update();
+    await update();
 
-    const tokenInput = document.getElementById("token");
-    const sendButton = document.getElementById("send-token");
-    const tokenStatus = document.getElementById("token-status");
-    const showStatus = (text, kind = "") => {
-      tokenStatus.textContent = text;
-      tokenStatus.className = kind;
+    // The token, remembered in this browser.
+    const TOKEN_KEY = "muse-sdk-token";
+    const token = () => (isSdkToken(tokenInput.value.trim()) ? tokenInput.value.trim() : null);
+    const tokenChanged = () => {
+      const value = tokenInput.value.trim();
+      if (token()) {
+        localStorage.setItem(TOKEN_KEY, value);
+        showStatus($("token-check"), "Saved in this browser.", "ok");
+      } else {
+        showStatus($("token-check"), value ? "That isn't an SDK token. Copy it again from gadgets.muse.ai." : "", "error");
+      }
+      $("token-warning").hidden = Boolean(token());
     };
-    sendButton.disabled = !pacing;
-    sendButton.addEventListener("click", async () => {
-      const token = tokenInput.value.trim();
-      if (!isSdkToken(token)) {
-        showStatus("That isn't an SDK token. Copy it again from gadgets.muse.ai.", "error");
+    tokenInput.value = localStorage.getItem(TOKEN_KEY) ?? "";
+    tokenInput.addEventListener("input", tokenChanged);
+    tokenChanged();
+    $("forget-token").addEventListener("click", (e) => {
+      e.preventDefault();
+      localStorage.removeItem(TOKEN_KEY);
+      tokenInput.value = "";
+      tokenChanged();
+    });
+
+    const send = async (port, statusEl) => {
+      showStatus(statusEl, "Sending your SDK token to the gadget…");
+      try {
+        await sendSdkToken(port, token());
+        showStatus(statusEl, "Done. The gadget restarts with your token; set it up in the Muse app.", "ok");
+      } catch (e) {
+        showStatus(statusEl, e.message, "error");
+      }
+    };
+
+    // After an install, closing the installer sends the token over its port.
+    let installedPort = null;
+    if (pacing) {
+      installFlasherHooks({
+        getSelection: () => ({ usb: allPorts.checked ? null : board.usb, minFlashBytes }),
+        onInstalled: (port) => (installedPort = port),
+      });
+    }
+    document.addEventListener("closed", async (e) => {
+      if (e.target.localName !== "ewt-install-dialog" || !installedPort) return;
+      const port = installedPort;
+      installedPort = null;
+      if (!token()) {
+        showStatus($("install-status"), "Installed. Now enter your SDK token above and send it with the button below.", "error");
+        tokenInput.focus();
+        return;
+      }
+      // The installer closes the port as it goes; wait for that.
+      for (let i = 0; i < 20 && (port.readable || port.writable); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      await send(port, $("install-status"));
+    });
+
+    $("send-token").disabled = !pacing;
+    $("send-token").addEventListener("click", async () => {
+      if (!token()) {
+        showStatus($("token-status"), "Enter your SDK token above first.", "error");
+        tokenInput.focus();
         return;
       }
       let port;
@@ -120,21 +202,11 @@ limitations under the License.
       } catch {
         return;   // no port picked
       }
-      sendButton.disabled = true;
-      showStatus("Sending the token to the gadget…");
-      try {
-        await sendSdkToken(port, token);
-        tokenInput.value = "";
-        showStatus("Done. The gadget restarts with your token; set it up in the Muse app.", "ok");
-      } catch (e) {
-        showStatus(e.message, "error");
-      } finally {
-        sendButton.disabled = false;
-      }
+      await send(port, $("token-status"));
     });
 
     if (build?.commit) {
-      const link = document.getElementById("commit");
+      const link = $("commit");
       link.href += `/commit/${build.commit}`;
       link.textContent = build.commit.slice(0, 7);
     }

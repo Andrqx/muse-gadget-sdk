@@ -9,19 +9,31 @@
   },
   {
     "board": "muse-espressif-box-3",
-    "name": "Espressif ESP32-S3-BOX-3"
+    "name": "Espressif ESP32-S3-BOX-3",
+    "usb": [
+      "303a:1001"
+    ]
   },
   {
     "board": "muse-m5stack-cores3",
-    "name": "M5Stack CoreS3"
+    "name": "M5Stack CoreS3",
+    "usb": [
+      "303a:1001"
+    ]
   },
   {
     "board": "muse-waveshare-s3-185c",
-    "name": "Waveshare ESP32-S3-Touch-LCD-1.85C"
+    "name": "Waveshare ESP32-S3-Touch-LCD-1.85C",
+    "usb": [
+      "303a:1001"
+    ]
   },
   {
     "board": "muse-sensecap-watcher",
     "name": "Seeed Studio SenseCAP Watcher",
+    "usb": [
+      "1a86:55d2"
+    ],
     "pacing": {
       "chunk": 32,
       "factor": 2
