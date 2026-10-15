@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<!--
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Muse Gadget Web Flasher</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
+    select { font-size: 1rem; padding: 0.4rem; margin: 0.5rem 0 1.5rem; width: 100%; }
+    .note { color: #666; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Muse Gadget Web Flasher</h1>
+  <p>
+    Flash the open source Muse Gadget firmware onto your ESP32 board straight
+    from the browser. Plug the board in over USB, pick it below and press
+    <strong>Connect</strong>.
+  </p>
+
+  <label for="board">Board</label>
+  <select id="board"></select>
+
+  <esp-web-install-button id="install">
+    <span slot="unsupported">
+      Your browser doesn't support Web Serial. Use Chrome or Edge on a desktop computer.
+    </span>
+    <span slot="not-allowed">Web Serial needs a secure (https) connection.</span>
+  </esp-web-install-button>
+
+  <p class="note">
+    Updating keeps your pairing and Wi-Fi settings. On a first install you can
+    choose to erase the device. Once flashed, set the device up with the Muse
+    app. Built from <a id="commit" href="https://github.com/facebookincubator/muse-gadget-sdk">main</a>.
+  </p>
+  <p class="note">
+    Board not showing up? Some boards need you to hold <strong>BOOT</strong>
+    while plugging in USB to enter download mode.
+  </p>
+
+  <script type="module">
+    const select = document.getElementById("board");
+    const button = document.getElementById("install");
+
+    const [boards, build] = await Promise.all([
+      fetch("boards.json").then((r) => r.json()),
+      fetch("build.json").then((r) => r.json()).catch(() => null),
+    ]);
+    for (const { board, name } of boards) {
+      select.add(new Option(name, board));
+    }
+    const update = () => button.setAttribute("manifest", `firmware/${select.value}/manifest.json`);
+    select.addEventListener("change", update);
+    update();
+
+    if (build?.commit) {
+      const link = document.getElementById("commit");
+      link.href += `/commit/${build.commit}`;
+      link.textContent = build.commit.slice(0, 7);
+    }
+  </script>
+</body>
+</html>

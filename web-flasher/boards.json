@@ -1,0 +1,32 @@
+[
+  {
+    "board": "devkit",
+    "name": "Espressif ESP32-C5 DevKitC-1",
+    "target": "esp32c5",
+    "overlays": ""
+  },
+  {
+    "board": "espressif-s3-devkitc-1",
+    "name": "Espressif ESP32-S3-DevKitC-1 (N8R8)",
+    "target": "esp32s3",
+    "overlays": ";devices/sdkconfig.espressif-s3-devkitc-1"
+  },
+  {
+    "board": "muse-espressif-box-3",
+    "name": "Espressif ESP32-S3-BOX-3",
+    "target": "esp32s3",
+    "overlays": ";devices/sdkconfig.muse;devices/sdkconfig.muse-espressif-box-3"
+  },
+  {
+    "board": "muse-m5stack-cores3",
+    "name": "M5Stack CoreS3",
+    "target": "esp32s3",
+    "overlays": ";devices/sdkconfig.muse;devices/sdkconfig.muse-m5stack-cores3"
+  },
+  {
+    "board": "muse-waveshare-s3-185c",
+    "name": "Waveshare ESP32-S3-Touch-LCD-1.85C",
+    "target": "esp32s3",
+    "overlays": ";devices/sdkconfig.muse;devices/sdkconfig.muse-waveshare-s3-185c"
+  }
+]
