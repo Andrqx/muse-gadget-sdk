@@ -38,3 +38,16 @@ bool identity_sdk_token_valid(const char *token);
 // Stores a valid token in NVS; it's used from the next boot. False if token
 // isn't valid or can't be stored.
 bool identity_set_sdk_token(const char *token);
+
+// The part of an SDK token gadgets.muse.ai shows: "mgst_" and 7 more.
+#define IDENTITY_SDK_TOKEN_HINT_LEN 12
+// Muse records a gadget's SDK token only when it pairs, so a token set later
+// takes effect only after pairing again. Call when the gadget stores
+// credentials from pairing or a mint, to remember the token they were issued
+// for. config_clear_pairing() forgets it.
+void identity_note_paired_sdk_token(void);
+// True when the gadget is paired with another SDK token (or with none) than
+// identity_sdk_token(), and needs pairing again to use it. paired_hint gets
+// that token's hint, or "none". False when no token was noted, as for a
+// gadget paired by older firmware.
+bool identity_sdk_token_changed_since_pairing(char *paired_hint, size_t cap);

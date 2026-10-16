@@ -118,6 +118,13 @@ answers `@sdk_token ok` and restarts with it. A stored token takes precedence
 over the build's. The [web flasher](../web-flasher/README.md) does this for
 you after installing.
 
+Muse records a gadget's SDK token when the gadget pairs, and nowhere else. If
+you change the token on a paired gadget, or revoke the one it paired with,
+pair it again: hold the button for 5 seconds, then pair it in the Muse app.
+Until then it keeps the token it paired with, and once that token is revoked it
+can't reach Muse. The boot log warns when the gadget is paired with a token
+other than its current one.
+
 ### 3. Flash
 
 Plug in the board and flash it:

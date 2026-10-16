@@ -913,9 +913,11 @@ static void build_hatch_page(lv_obj_t *tile)
 
 static void tick_hatch(void)
 {
-    char link[64];
-    snprintf(link, sizeof(link), "Muse app: %s\n%s", muse_link_hatch_linked() ? "paired" : "not paired",
-             muse_link_state_name(muse_link_state()));
+    char link[96];
+    const char *paired = !muse_link_hatch_linked()    ? "not paired"
+                         : muse_link_sdk_token_changed() ? "paired with another SDK token, pair again to use this one"
+                                                         : "paired";
+    snprintf(link, sizeof(link), "Muse app: %s\n%s", paired, muse_link_state_name(muse_link_state()));
     set_text(s_link_status, link);
     if (s_link_reset_armed_us && esp_timer_get_time() - s_link_reset_armed_us >= 5000000) {
         s_link_reset_armed_us = 0;

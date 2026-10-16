@@ -61,6 +61,7 @@ typedef struct {
     bool (*hatch_linked)(void);                   /* paired to a Hatch account */
     const char *(*sdk_token)(void);               /* the maker's SDK token, or NULL */
     bool (*sdk_token_set)(const char *token);     /* stores it and restarts; false if invalid */
+    bool (*sdk_token_changed)(void);              /* paired with another token: pair again to use this one */
     /* Fills the VM whose id is want_vm (empty: Link's preferred VM). *vm_token is heap. */
     bool (*hatch_vm)(const char *want_vm, char *vm_id, size_t id_cap, char *vm_name, size_t name_cap,
                      char **vm_token);
@@ -88,6 +89,7 @@ const char *muse_link_state_name(muse_link_state_t state);
 bool muse_link_hatch_linked(void);
 const char *muse_link_sdk_token(void);
 bool muse_link_sdk_token_set(const char *token);
+bool muse_link_sdk_token_changed(void);
 bool muse_link_hatch_vm(const char *want_vm, char *vm_id, size_t id_cap, char *vm_name, size_t name_cap,
                         char **vm_token);
 bool muse_link_talk_press(void);

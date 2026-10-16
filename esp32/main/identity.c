@@ -45,6 +45,9 @@ static char s_device_id[48];
 static char s_sdk_token[IDENTITY_SDK_TOKEN_LEN + 1];
 
 #define SDK_TOKEN_KEY "sdk_token"
+// Cleared with the pairing credentials (config_clear_pairing).
+#define PAIRED_SDK_TOKEN_KEY "pair_sdk_hint"
+#define NO_SDK_TOKEN_HINT "none"
 
 void identity_init(void) {
     uint8_t mac[6] = {0};
@@ -95,4 +98,28 @@ bool identity_sdk_token_valid(const char *token) {
 // until the next one.
 bool identity_set_sdk_token(const char *token) {
     return identity_sdk_token_valid(token) && config_set_str(SDK_TOKEN_KEY, token);
+}
+
+static void sdk_token_hint(char out[IDENTITY_SDK_TOKEN_HINT_LEN + 1]) {
+    const char *token = identity_sdk_token();
+    snprintf(out, IDENTITY_SDK_TOKEN_HINT_LEN + 1, "%.*s", IDENTITY_SDK_TOKEN_HINT_LEN,
+             token ? token : NO_SDK_TOKEN_HINT);
+}
+
+void identity_note_paired_sdk_token(void) {
+    char hint[IDENTITY_SDK_TOKEN_HINT_LEN + 1];
+    sdk_token_hint(hint);
+    if (!config_set_str(PAIRED_SDK_TOKEN_KEY, hint)) {
+        ESP_LOGW(TAG, "couldn't store which SDK token pairing used");
+    }
+}
+
+bool identity_sdk_token_changed_since_pairing(char *paired_hint, size_t cap) {
+    char paired[IDENTITY_SDK_TOKEN_HINT_LEN + 1];
+    if (!config_get_str(PAIRED_SDK_TOKEN_KEY, paired, sizeof(paired))) return false;
+    char current[IDENTITY_SDK_TOKEN_HINT_LEN + 1];
+    sdk_token_hint(current);
+    if (strcmp(paired, current) == 0) return false;
+    if (paired_hint && cap) snprintf(paired_hint, cap, "%s", paired);
+    return true;
 }

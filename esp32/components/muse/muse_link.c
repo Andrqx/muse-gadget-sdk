@@ -75,6 +75,11 @@ bool muse_link_sdk_token_set(const char *token)
     return s_ops && s_ops->sdk_token_set && s_ops->sdk_token_set(token);
 }
 
+bool muse_link_sdk_token_changed(void)
+{
+    return s_ops && s_ops->sdk_token_changed && s_ops->sdk_token_changed();
+}
+
 bool muse_link_hatch_vm(const char *want_vm, char *vm_id, size_t id_cap, char *vm_name, size_t name_cap,
                         char **vm_token)
 {

@@ -382,6 +382,10 @@ static bool op_sdk_token_set(const char *token) {
     return true;
 }
 
+static bool op_sdk_token_changed(void) {
+    return identity_sdk_token_changed_since_pairing(NULL, 0);
+}
+
 static bool op_talk_press(void) {
     return app_confirm_pairing_press();
 }
@@ -404,6 +408,7 @@ static const muse_link_ops_t s_ops = {
     .hatch_linked = op_hatch_linked,
     .sdk_token = identity_sdk_token,
     .sdk_token_set = op_sdk_token_set,
+    .sdk_token_changed = op_sdk_token_changed,
     .hatch_vm = op_hatch_vm,
     .talk_press = op_talk_press,
     .reset_setup = op_reset_setup,
