@@ -1877,19 +1877,25 @@ static cJSON *on_ws_command(
         return queue_ws_control(WS_CONTROL_SET_VM, url);
     }
 #if CONFIG_HOMEHUB_DISPLAY_COMMANDS
-    if (strcmp(command, "display.draw_url") == 0) {
-        cJSON *url = cJSON_GetObjectItem(params, "url");
+    bool draw_file = strcmp(command, "display.draw_file") == 0;
+    if (draw_file || strcmp(command, "display.draw_url") == 0) {
+        // draw_file takes a path on the VM, fetched over this session.
+        cJSON *target = cJSON_GetObjectItem(params, draw_file ? "path" : "url");
         cJSON *row = cJSON_GetObjectItem(params, "row");
-        if (!cJSON_IsString(url) || !url->valuestring || !url->valuestring[0]) {
-            return command_error("missing_param", "url is required");
+        if (!cJSON_IsString(target) || !target->valuestring || !target->valuestring[0]) {
+            return command_error("missing_param",
+                                 draw_file ? "path is required" : "url is required");
         }
         draw_url_ctx_t *ctx = calloc(1, sizeof(*ctx));
         if (!ctx) return command_error("out_of_memory", "failed to allocate");
         ctx->session_generation = session_generation;
         strncpy(ctx->request_id, request_id, sizeof(ctx->request_id) - 1);
         const char *code, *message;
-        if (!image_fetch_start(url->valuestring, cJSON_IsNumber(row) ? row->valueint : IMAGE_FETCH_DEFAULT_ROW,
-                               draw_url_done, ctx, &code, &message)) {
+        int top = cJSON_IsNumber(row) ? row->valueint : IMAGE_FETCH_DEFAULT_ROW;
+        bool started = draw_file
+            ? image_fetch_start_vm(target->valuestring, top, draw_url_done, ctx, &code, &message)
+            : image_fetch_start(target->valuestring, top, draw_url_done, ctx, &code, &message);
+        if (!started) {
             free(ctx);
             return command_error(code, message);
         }
